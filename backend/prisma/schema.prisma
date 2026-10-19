@@ -1,0 +1,713 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// FINANCES
+// ============================================================
+
+model AnneeScolaire {
+  id            Int            @id @default(autoincrement())
+  libelle       String         @unique // "2025-2026"
+  dateDebut     DateTime
+  dateFin       DateTime
+  inscriptions  Inscription[]
+  paiements     Paiement[]
+  emploisDuTemps EmploiDuTemps[]
+  salles        Salle[]
+  examensBlancs ExamenBlanc[]
+}
+
+model TypeFrais {
+  id        Int        @id @default(autoincrement())
+  code      String     @unique // "INSCRIPTION" | "ECOLAGE"
+  libelle   String
+  frais     Frais[]
+  paiements Paiement[]
+}
+
+model Frais {
+  id           Int        @id @default(autoincrement())
+  typeFraisId  Int
+  typeFrais    TypeFrais  @relation(fields: [typeFraisId], references: [id])
+  montant      Decimal    @db.Decimal(12, 2) // 650000 / 325000 - uniforme toutes classes
+  dateMaj      DateTime   @default(now())
+}
+
+model RemiseFraternite {
+  id         Int     @id @default(autoincrement())
+  rang       Int     @unique // 2, 3, 4 (2e, 3e, 4e enfant inscrit)
+  montant    Decimal @db.Decimal(12, 2) // 315000 / 300000 / 290000
+}
+
+enum ModePaiement {
+  MENSUEL
+  GLOBAL_ANNUEL
+}
+
+model Paiement {
+  id              Int           @id @default(autoincrement())
+  inscriptionId   Int
+  inscription     Inscription   @relation(fields: [inscriptionId], references: [id])
+  anneeScolaireId Int
+  anneeScolaire   AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+  typeFraisId     Int
+  typeFrais       TypeFrais     @relation(fields: [typeFraisId], references: [id])
+  mode            ModePaiement
+  montant         Decimal       @db.Decimal(12, 2)
+  tauxPenalite    Decimal       @default(0.10) @db.Decimal(4, 2) // fixe, non configurable
+  datePrevue      DateTime
+  dateEffective   DateTime?
+  moisConcerne    Int?          // 1-12, pour le mode MENSUEL
+  statut          String        @default("en_attente") // en_attente | paye | en_retard
+  dateCreation    DateTime      @default(now())
+  montantPenalite Decimal  @default(0) @db.Decimal(12, 2)
+  numeroRecu      String?  @unique
+  enregistreParId Int?
+  motifAnnulation String?
+
+  @@index([inscriptionId]) // en_attente | paye | en_retard | annule.
+}
+
+// ============================================================
+// ELEVES / STRUCTURE
+// ============================================================
+
+model Classe {
+  id             Int            @id @default(autoincrement())
+  nom            String         @unique // "Classe 1", "Classe 2", "Classe 3", (futur) "Classe 4" (college)
+  ordre          Int            @unique // 1, 2, 3, 4...
+  cycle          String         // "prescolaire" | "primaire_1" | "primaire_2" | "college"
+  // Toutes les classes/niveaux sont evaluees en A/EA/AR (pas de "mode" a choisir) :
+  // le cycle determine seulement le referentiel utilise (Domaine pour le prescolaire,
+  // Matiere/Lecon sinon) -- voir NoteCompetence / NoteLecon. L'Examen Blanc (notes /20)
+  // est un dispositif a part, cible sur un Niveau precis (ExamenBlanc.niveauId),
+  // pas un "mode" de classe entiere.
+  niveaux        Niveau[]
+}
+
+model Niveau {
+  id          Int        @id @default(autoincrement())
+  nom         String     // PS, MS, GS, 11e, 10e, 9e, 8e, 7e, (futur) 6e, 5e...
+  ordre       Int        // ordre au sein de la classe
+  classeId    Int
+  classe      Classe     @relation(fields: [classeId], references: [id])
+  salles      Salle[]
+  semestres   Semestre[]
+  inscriptions Inscription[]
+  emploisDuTemps EmploiDuTemps[]
+  matiereCoefficients MatiereCoefficient[]
+  lecons      Lecon[]
+  examensBlancs ExamenBlanc[]
+
+  @@unique([classeId, nom])
+}
+
+model Salle {
+  id              Int            @id @default(autoincrement())
+  nom             String         @unique // "1A", "1B", "2A", "3A", "3B"
+  anneeScolaireId Int?
+  anneeScolaire   AnneeScolaire? @relation(fields: [anneeScolaireId], references: [id])
+  niveaux        Niveau[]        // many-to-many implicite : une salle regroupe plusieurs niveaux
+  inscriptions   Inscription[]
+  emploisDuTemps EmploiDuTemps[]
+  progressions   ProgressionLecon[]
+  programmesC1   ProgressionDomaine[]
+  personnelAffecte Personnel[]
+}
+
+model Eleve {
+  id                   Int             @id @default(autoincrement())
+  matricule            String          @unique // genere par l'appli (ELV-2026-0001), identifiant technique
+  numeroInscription    String?         @unique // numero porte sur le dossier papier a l'admission (distinct du matricule)
+  nom                  String
+  prenom               String
+  sexe                 String
+  dateNaissance        DateTime
+  dateInscription      DateTime?       // date d'admission initiale a l'ecole (une fois, pas par annee -- voir Inscription.dateInscription pour le suivi annuel)
+  taille               Float?          // en cm
+  dossiersManquants    String?         @db.Text // liste libre des pieces manquantes au dossier
+  assurance            String?         // nom de la compagnie / numero de police
+  assuranceExpiration  DateTime?
+  telephone            String?
+  email1               String?
+  email2               String?
+  quartier             String?
+  professionPere       String?
+  professionMere       String?
+  parents              ParentEleve[]
+  inscriptions         Inscription[]
+}
+
+// Une personne réelle (père, mère, tuteur). Un Parent peut avoir plusieurs
+// enfants inscrits à l'école : ses infos (nom, téléphone, email) ne sont
+// stockées qu'une seule fois ici, et son compte Utilisateur (s'il en a un)
+// lui donne accès à TOUS ses enfants, pas un compte par enfant.
+model Parent {
+  id          Int              @id @default(autoincrement())
+  nom         String
+  prenom      String
+  telephone   String
+  email       String?
+  utilisateur Utilisateur?
+  enfants     ParentEleve[]
+  remarques   RemarqueParent[]
+  rendezVous  RendezVous[]
+}
+
+// Table de jonction : relie un Parent à un Eleve, avec la nature du lien.
+// Un même Parent peut apparaître plusieurs fois (un par enfant), un même
+// Eleve peut avoir plusieurs Parent (père, mère, tuteur...).
+model ParentEleve {
+  id          Int    @id @default(autoincrement())
+  parentId    Int
+  parent      Parent @relation(fields: [parentId], references: [id])
+  eleveId     Int
+  eleve       Eleve  @relation(fields: [eleveId], references: [id])
+  lienParente String // "pere" | "mere" | "tuteur"
+
+  @@unique([parentId, eleveId])
+}
+
+model Inscription {
+  id              Int           @id @default(autoincrement())
+  eleveId         Int
+  eleve           Eleve         @relation(fields: [eleveId], references: [id])
+  salleId         Int
+  salle           Salle         @relation(fields: [salleId], references: [id])
+  niveauId        Int
+  niveau          Niveau        @relation(fields: [niveauId], references: [id])
+  anneeScolaireId Int
+  anneeScolaire   AnneeScolaire @relation(fields: [anneeScolaireId], references: [id])
+  rangFratrie     Int           @default(1) // 1er, 2e, 3e, 4e enfant inscrit -> remise
+  statut          String        @default("en_attente") // en_attente | validee
+  dateInscription DateTime      @default(now())
+  paiements         Paiement[]
+  notesCompetence   NoteCompetence[]
+  notesLecon        NoteLecon[]
+  notesExamen       NoteExamen[]
+  bulletins         Bulletin[]
+  absences          Absence[]
+  @@index([eleveId, anneeScolaireId])
+}
+
+// ============================================================
+// PERSONNEL / RH
+// ============================================================
+
+model Personnel {
+  id                    Int                  @id @default(autoincrement())
+  matricule             String               @unique
+  nom                   String
+  prenom                String
+  sexe                  String?
+  dateNaissance         DateTime?
+  cin                   String?              @unique // numero de carte d'identite nationale
+  adresse               String?
+  telephone             String?
+  indemniteTransportJour Decimal?            @db.Decimal(10, 2)
+  numeroCnaps           String?
+  poste                 String               // enseignant, secretariat, comptable, directrice... (= "fonction")
+  salleAffecteeId       Int?                 // emplacement / classe / salle habituelle (ex: titulaire de "1A")
+  salleAffectee         Salle?               @relation(fields: [salleAffecteeId], references: [id])
+  lieuAffectation       String?              // site / etablissement, utile si plusieurs implantations
+  autorisationEnseigner Boolean              @default(false)
+  banque                String?
+  dateEmbauche          DateTime
+  dateDepart            DateTime?
+  dateRetraite          DateTime?
+  utilisateur           Utilisateur?
+  fichesDePaie          FicheDePaie[]
+  certificats           CertificatTravail[]
+  pointages             Pointage[]
+  enseigne              EnseignantMatiere[]
+  emploisDuTemps        EmploiDuTemps[]
+  notesCompetence       NoteCompetence[]
+  notesLecon            NoteLecon[]
+  notesExamen           NoteExamen[]
+  progressions          ProgressionLecon[]
+  progressionsC1        ProgressionDomaine[]
+}
+
+model FicheDePaie {
+  id           Int       @id @default(autoincrement())
+  personnelId  Int
+  personnel    Personnel @relation(fields: [personnelId], references: [id])
+  mois         Int
+  annee        Int
+  salaireBrut  Decimal   @db.Decimal(12, 2)
+  salaireNet   Decimal   @db.Decimal(12, 2)
+  dateGeneration DateTime @default(now())
+}
+
+enum TypeCertificat {
+  TRAVAIL
+  CONTRAT
+}
+
+model CertificatTravail {
+  id           Int            @id @default(autoincrement())
+  personnelId  Int
+  personnel    Personnel      @relation(fields: [personnelId], references: [id])
+  type         TypeCertificat
+  dateGeneration DateTime     @default(now())
+  contenu      String         @db.Text
+}
+
+model Pointage {
+  id           Int       @id @default(autoincrement())
+  personnelId  Int
+  personnel    Personnel @relation(fields: [personnelId], references: [id])
+  date         DateTime  @db.Date
+  heureArrivee DateTime?
+  heureDepart  DateTime?
+}
+
+// ============================================================
+// PEDAGOGIE - REFERENTIEL COMMUN (Semestre / Ceinture)
+// ============================================================
+
+model Semestre {
+  id       Int        @id @default(autoincrement())
+  niveauId Int
+  niveau   Niveau     @relation(fields: [niveauId], references: [id])
+  numero   Int        // 1 ou 2
+  ceintures Ceinture[]
+
+  @@unique([niveauId, numero])
+}
+
+// Une "ceinture" = un palier de progression a l'interieur d'un semestre.
+// Classe 1 et Classe 3 : 1 ceinture par semestre (ex: jaune).
+// Classe 2 : jusqu'a 2 ceintures par semestre (ex: blanche puis jaune).
+model Ceinture {
+  id          Int        @id @default(autoincrement())
+  semestreId  Int
+  semestre    Semestre   @relation(fields: [semestreId], references: [id])
+  nom         String     // jaune, orange, blanche, verte, bleue, marron, noire...
+  ordre       Int        @default(0)
+  domaines    Domaine[]        // Classe 1
+  lecons      Lecon[]          // Classe 2 / 3 / college
+
+  @@unique([semestreId, nom])
+}
+
+// ---------- Classe 1 : Domaine / SousDomaine / Competence ----------
+
+model Domaine {
+  id          Int           @id @default(autoincrement())
+  ceintureId  Int
+  ceinture    Ceinture      @relation(fields: [ceintureId], references: [id])
+  nom         String        // Vivre ensemble et devenir eleve, Langage et communication...
+  sousDomaines SousDomaine[]
+  competences Competence[]  // competences directement rattachees au domaine (pas de sous-domaine)
+  progressions ProgressionDomaine[]
+}
+
+model SousDomaine {
+  id          Int          @id @default(autoincrement())
+  domaineId   Int
+  domaine     Domaine      @relation(fields: [domaineId], references: [id])
+  nom         String       // Langage oral, Pre-maths, Motricite fine...
+  competences Competence[]
+}
+
+model Competence {
+  id            Int          @id @default(autoincrement())
+  domaineId     Int?
+  domaine       Domaine?     @relation(fields: [domaineId], references: [id])
+  sousDomaineId Int?
+  sousDomaine   SousDomaine? @relation(fields: [sousDomaineId], references: [id])
+  libelle       String       @db.Text
+  notes         NoteCompetence[]
+}
+
+enum NiveauCompetence {
+  A   // Acquis
+  EA  // En cours d'Acquisition
+  AR  // A Renforcer
+}
+
+model NoteCompetence {
+  id            Int              @id @default(autoincrement())
+  inscriptionId Int
+  inscription   Inscription      @relation(fields: [inscriptionId], references: [id])
+  competenceId  Int
+  competence    Competence       @relation(fields: [competenceId], references: [id])
+  niveau        NiveauCompetence
+  enseignantId  Int
+  enseignant    Personnel        @relation(fields: [enseignantId], references: [id])
+  dateSaisie    DateTime         @default(now())
+
+  @@unique([inscriptionId, competenceId])
+}
+
+// suivi "domaine vu / en cours" par salle, equivalent du Programme pour Classe 1
+model ProgressionDomaine {
+  id          Int      @id @default(autoincrement())
+  domaineId   Int
+  domaine     Domaine  @relation(fields: [domaineId], references: [id])
+  salleId     Int
+  salle       Salle    @relation(fields: [salleId], references: [id])
+  enseignantId Int
+  enseignant  Personnel @relation(fields: [enseignantId], references: [id])
+  statut      String   @default("en_cours") // en_cours | termine
+  dateMaj     DateTime @default(now())
+
+  @@unique([domaineId, salleId])
+}
+
+// ---------- Classe 2 / 3 / college : Matiere / Rubrique / Lecon ----------
+
+model Matiere {
+  id           Int                  @id @default(autoincrement())
+  nom          String               @unique // Francais, Calcul, Eveil, Malgache, (college) SVT, Histoire-Geo...
+  rubriques    Rubrique[]
+  lecons       Lecon[]
+  coefficients MatiereCoefficient[]
+  enseignants  EnseignantMatiere[]
+  examensDiscipline ExamenBlancDiscipline[]
+  emploisDuTemps EmploiDuTemps[]
+}
+
+model Rubrique {
+  id        Int      @id @default(autoincrement())
+  matiereId Int
+  matiere   Matiere  @relation(fields: [matiereId], references: [id])
+  nom       String   // Grammaire, Conjugaison, Orthographe, Vocabulaire, Expression orale/ecrite,
+                      // Connaissances usuelles, Geographie, Histoire, Education civique,
+                      // Lohahevitra, Fitsipi-pitenenana, Tsipelin-teny, Numeration, Operation...
+  lecons    Lecon[]
+
+  @@unique([matiereId, nom])
+}
+
+model Lecon {
+  id           Int                @id @default(autoincrement())
+  titre        String             @db.Text
+  ordre        Int                @default(0)
+  matiereId    Int
+  matiere      Matiere            @relation(fields: [matiereId], references: [id])
+  rubriqueId   Int?               // null si la matiere n'a pas de sous-categorie (ex: Calcul en Classe 3)
+  rubrique     Rubrique?          @relation(fields: [rubriqueId], references: [id])
+  niveauId     Int
+  niveau       Niveau             @relation(fields: [niveauId], references: [id])
+  ceintureId   Int
+  ceinture     Ceinture           @relation(fields: [ceintureId], references: [id])
+  progressions ProgressionLecon[]
+  notes        NoteLecon[]
+}
+
+// Evaluation individuelle d'un eleve sur une lecon (A/EA/AR), pour Classe 2/3/college.
+// Equivalent de NoteCompetence pour le referentiel Matiere/Rubrique/Lecon.
+// A distinguer de ProgressionLecon : ProgressionLecon = "la lecon a ete enseignee
+// dans cette salle" (suivi collectif), NoteLecon = "cet eleve maitrise cette lecon"
+// (evaluation individuelle, alimente le bulletin).
+model NoteLecon {
+  id            Int              @id @default(autoincrement())
+  inscriptionId Int
+  inscription   Inscription      @relation(fields: [inscriptionId], references: [id])
+  leconId       Int
+  lecon         Lecon            @relation(fields: [leconId], references: [id])
+  niveau        NiveauCompetence
+  enseignantId  Int
+  enseignant    Personnel        @relation(fields: [enseignantId], references: [id])
+  dateSaisie    DateTime         @default(now())
+
+  @@unique([inscriptionId, leconId])
+}
+
+model ProgressionLecon {
+  id              Int       @id @default(autoincrement())
+  leconId         Int
+  lecon           Lecon     @relation(fields: [leconId], references: [id])
+  salleId         Int
+  salle           Salle     @relation(fields: [salleId], references: [id])
+  enseignantId    Int
+  enseignant      Personnel @relation(fields: [enseignantId], references: [id])
+  dateRealisation DateTime  @default(now())
+
+  @@unique([leconId, salleId])
+}
+
+model MatiereCoefficient {
+  id         Int     @id @default(autoincrement())
+  matiereId  Int
+  matiere    Matiere @relation(fields: [matiereId], references: [id])
+  niveauId   Int
+  niveau     Niveau  @relation(fields: [niveauId], references: [id])
+  coefficient Int
+
+  @@unique([matiereId, niveauId])
+}
+
+model EnseignantMatiere {
+  id           Int       @id @default(autoincrement())
+  personnelId  Int
+  personnel    Personnel @relation(fields: [personnelId], references: [id])
+  matiereId    Int
+  matiere      Matiere   @relation(fields: [matiereId], references: [id])
+
+  @@unique([personnelId, matiereId])
+}
+
+// "Examen blanc" : dispositif de notation /20 propre a un Niveau precis
+// (aujourd'hui Classe 3 - 3e annee, mais pensable pour d'autres niveaux/colleges
+// plus tard sans changer le schema). Une session (numero 1 a 4...) regroupe
+// plusieurs disciplines, chacune avec SON PROPRE coefficient pour cette session
+// -- independant de MatiereCoefficient qui sert au reste de l'annee.
+// S'ajoute aux bulletins A/EA/AR habituels du niveau (NoteCompetence/NoteLecon),
+// ne les remplace pas : un meme eleve a ses bulletins S1/S2 ET ses examens blancs.
+model ExamenBlanc {
+  id              Int                     @id @default(autoincrement())
+  niveauId        Int
+  niveau          Niveau                  @relation(fields: [niveauId], references: [id])
+  anneeScolaireId Int
+  anneeScolaire   AnneeScolaire           @relation(fields: [anneeScolaireId], references: [id])
+  numero          Int                     // 1, 2, 3, 4...
+  date            DateTime
+  disciplines     ExamenBlancDiscipline[]
+
+  @@unique([niveauId, anneeScolaireId, numero])
+}
+
+// Une discipline evaluee dans un examen blanc donne, avec son coefficient
+// POUR CET EXAMEN (ex: Francais:1, Malgache:2, SVT:2...). Reutilise Matiere
+// comme vocabulaire partage ; une discipline d'examen (ex: "Operations",
+// "Problemes") peut tres bien etre une Matiere qui n'existe que pour les
+// examens blancs, independante des Rubrique/Lecon du bulletin normal.
+model ExamenBlancDiscipline {
+  id            Int          @id @default(autoincrement())
+  examenBlancId Int
+  examenBlanc   ExamenBlanc  @relation(fields: [examenBlancId], references: [id])
+  matiereId     Int
+  matiere       Matiere      @relation(fields: [matiereId], references: [id])
+  coefficient   Int
+  notes         NoteExamen[]
+
+  @@unique([examenBlancId, matiereId])
+}
+
+model NoteExamen {
+  id            Int                   @id @default(autoincrement())
+  disciplineId  Int
+  discipline    ExamenBlancDiscipline @relation(fields: [disciplineId], references: [id])
+  inscriptionId Int
+  inscription   Inscription           @relation(fields: [inscriptionId], references: [id])
+  note          Decimal               @db.Decimal(4, 2) // /20
+  enseignantId  Int
+  enseignant    Personnel             @relation(fields: [enseignantId], references: [id])
+  dateSaisie    DateTime              @default(now())
+
+  @@unique([disciplineId, inscriptionId])
+}
+
+model Bulletin {
+  id                   Int         @id @default(autoincrement())
+  inscriptionId        Int
+  inscription          Inscription @relation(fields: [inscriptionId], references: [id])
+  periode              String      // "Semestre 1", "Semestre 2"
+  appreciationGenerale String?     @db.Text // point d'entree futur module IA
+  dateGeneration       DateTime    @default(now())
+}
+
+// ============================================================
+// VIE SCOLAIRE
+// ============================================================
+
+model EmploiDuTemps {
+  id              Int            @id @default(autoincrement())
+  salleId         Int
+  salle           Salle          @relation(fields: [salleId], references: [id])
+  niveauId        Int
+  niveau          Niveau         @relation(fields: [niveauId], references: [id])
+  matiereId       Int?
+  matiere         Matiere?       @relation(fields: [matiereId], references: [id])
+  enseignantId    Int?
+  enseignant      Personnel?     @relation(fields: [enseignantId], references: [id])
+  anneeScolaireId Int
+  anneeScolaire   AnneeScolaire  @relation(fields: [anneeScolaireId], references: [id])
+  jourSemaine     Int            // 1=lundi ... 5=vendredi
+  heureDebut      String
+  heureFin        String
+  titre           String?
+}
+
+model Absence {
+  id            Int         @id @default(autoincrement())
+  inscriptionId Int
+  inscription   Inscription @relation(fields: [inscriptionId], references: [id])
+  date          DateTime    @db.Date
+  justifiee     Boolean     @default(false)
+  motif         String?
+  saisiParId    Int
+  saisiPar      Utilisateur @relation(fields: [saisiParId], references: [id])
+}
+
+model DossierPartage {
+  id          Int      @id @default(autoincrement())
+  titre       String
+  fichierUrl  String
+  type        String?
+  dateDepot   DateTime @default(now())
+}
+
+model PeriodeMenu {
+  id        Int        @id @default(autoincrement())
+  nom       String
+  dateDebut DateTime   @db.Date
+  dateFin   DateTime   @db.Date
+  jours     JourMenu[]
+}
+
+model JourMenu {
+  id             Int         @id @default(autoincrement())
+  periodeMenuId  Int
+  periodeMenu    PeriodeMenu @relation(fields: [periodeMenuId], references: [id])
+  date           DateTime    @db.Date
+  entree         String?
+  platPrincipal  String?
+  dessert        String?
+}
+
+enum TypeInventaire {
+  MOBILIER
+  FOURNITURE
+  AUTRE
+}
+enum TypeMouvementInventaire {
+  ENTREE
+  SORTIE
+}
+
+model MouvementInventaire {
+  id            Int                      @id @default(autoincrement())
+  inventaireId  Int
+  inventaire    Inventaire               @relation(fields: [inventaireId], references: [id])
+  type          TypeMouvementInventaire
+  quantite      Int
+  utilisateurId Int
+  utilisateur   Utilisateur              @relation(fields: [utilisateurId], references: [id])
+  motif         String?
+  dateMouvement DateTime                 @default(now())
+}
+
+model Inventaire {
+  id        Int            @id @default(autoincrement())
+  libelle   String
+  type      TypeInventaire
+  quantite  Int
+  dateMaj   DateTime       @default(now())
+  mouvements MouvementInventaire[]
+
+}
+
+
+model JournalActivite {
+  id             Int         @id @default(autoincrement())
+  utilisateurId  Int
+  utilisateur    Utilisateur @relation(fields: [utilisateurId], references: [id])
+  action         String
+  details        String?     @db.Text
+  dateAction     DateTime    @default(now())
+}
+
+model Publication {
+  id              Int      @id @default(autoincrement())
+  titre           String
+  contenu         String   @db.Text
+  type            String
+  visiblePublic   Boolean  @default(false)
+  datePublication DateTime @default(now())
+}
+
+model Notification {
+  id            Int         @id @default(autoincrement())
+  utilisateurId Int
+  utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id])
+  message       String
+  lu            Boolean     @default(false)
+  dateCreation  DateTime    @default(now())
+}
+
+enum StatutRendezVous {
+  DEMANDE
+  CONFIRME
+  ANNULE
+  TERMINE
+}
+
+model RendezVous {
+  id            Int              @id @default(autoincrement())
+  parentId      Int
+  parent        Parent           @relation(fields: [parentId], references: [id])
+  utilisateurId Int
+  utilisateur   Utilisateur      @relation(fields: [utilisateurId], references: [id])
+  dateHeure     DateTime
+  statut        StatutRendezVous @default(DEMANDE)
+  motif         String?
+}
+
+model RemarqueParent {
+  id            Int         @id @default(autoincrement())
+  parentId      Int
+  parent        Parent      @relation(fields: [parentId], references: [id])
+  utilisateurId Int
+  utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id])
+  contenu       String      @db.Text
+  traitee       Boolean     @default(false)
+  dateCreation  DateTime    @default(now())
+}
+
+// ============================================================
+// COMPTES
+// ============================================================
+
+enum RoleUtilisateur {
+  ADMIN
+  ENSEIGNANT
+  SECRETARIAT
+  COMPTABLE
+  DIRECTRICE
+  PARENT
+}
+
+model Utilisateur {
+  id                  Int             @id @default(autoincrement())
+  email               String          @unique
+  motDePasseHash      String
+  role                RoleUtilisateur
+  personnelId         Int?            @unique
+  personnel           Personnel?      @relation(fields: [personnelId], references: [id])
+  parentId            Int?            @unique
+  parent              Parent?         @relation(fields: [parentId], references: [id])
+  dateCreation        DateTime        @default(now())
+  tentativesEchouees  Int             @default(0)
+  verrouilleJusqua    DateTime?
+  journalActivites JournalActivite[]
+  notifications    Notification[]
+  rendezVous       RendezVous[]
+  remarques        RemarqueParent[]
+  absencesSaisies  Absence[]
+  mouvementsInventaire MouvementInventaire[]
+  actif                 Boolean   @default(true)
+  doitChangerMotDePasse Boolean   @default(false)
+  derniereConnexion     DateTime?
+}
+model JournalAudit {
+  id            Int      @id @default(autoincrement())
+  date          DateTime @default(now())
+  utilisateurId Int?
+  action        String   // ELEVE_MODIFIE, ...
+  entite        String   // "Eleve"
+  entiteId      Int
+  details       Json?    // { champ: { avant, apres } }
+
+  @@index([entite, entiteId])
+  @@index([date])
+}
