@@ -1,5 +1,6 @@
 import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
@@ -15,6 +16,13 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
   ) {}
+
+  // Jamais de mot de passe ni de jeton dans les détails
+  private journaliser(utilisateurId: number, action: string, details?: Prisma.InputJsonValue) {
+    return this.prisma.journalAudit.create({
+      data: { utilisateurId, action, entite: 'Utilisateur', entiteId: utilisateurId, details },
+    });
+  }
 
   async register(dto: RegisterDto) {
     const existant = await this.prisma.utilisateur.findUnique({ where: { email: dto.email } });
@@ -61,21 +69,21 @@ export class AuthService {
           ? 0
           : utilisateur.tentativesEchouees;
       const tentatives = base + 1;
+      const verrouille = tentatives >= MAX_TENTATIVES;
       await this.prisma.utilisateur.update({
         where: { id: utilisateur.id },
         data: {
           tentativesEchouees: tentatives,
-          verrouilleJusqua:
-            tentatives >= MAX_TENTATIVES
-              ? new Date(Date.now() + DUREE_VERROUILLAGE_MIN * 60_000)
-              : null,
+          verrouilleJusqua: verrouille ? new Date(Date.now() + DUREE_VERROUILLAGE_MIN * 60_000) : null,
         },
       });
+      await this.journaliser(utilisateur.id, verrouille ? 'COMPTE_VERROUILLE' : 'CONNEXION_ECHEC', { tentatives });
       throw new UnauthorizedException('Email ou mot de passe incorrect');
     }
 
     // Révélé seulement à qui connaît le bon mot de passe
     if (!utilisateur.actif) {
+      await this.journaliser(utilisateur.id, 'CONNEXION_REFUSEE_COMPTE_DESACTIVE');
       throw new UnauthorizedException("Ce compte est désactivé. Contactez l'administration.");
     }
 
@@ -83,6 +91,7 @@ export class AuthService {
       where: { id: utilisateur.id },
       data: { tentativesEchouees: 0, verrouilleJusqua: null, derniereConnexion: maintenant },
     });
+    await this.journaliser(utilisateur.id, 'CONNEXION_REUSSIE');
 
     const payload = { sub: utilisateur.id, role: utilisateur.role };
 

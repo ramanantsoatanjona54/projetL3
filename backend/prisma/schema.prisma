@@ -266,6 +266,8 @@ model Pointage {
   date         DateTime  @db.Date
   heureArrivee DateTime?
   heureDepart  DateTime?
+  @@unique([personnelId, date])
+  @@index([date])
 }
 
 // ============================================================
@@ -547,6 +549,8 @@ model Absence {
   motif         String?
   saisiParId    Int
   saisiPar      Utilisateur @relation(fields: [saisiParId], references: [id])
+  @@unique([inscriptionId, date])
+  @@index([date])
 }
 
 model DossierPartage {
