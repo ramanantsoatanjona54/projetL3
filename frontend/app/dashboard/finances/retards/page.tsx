@@ -2,27 +2,59 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { api, ApiError } from '@/lib/api';
+import { api } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import { messageErreur } from '@/lib/messages';
 import { ar } from '@/lib/format';
 import type { LigneRetard } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ModaleCrud } from '@/components/structure/ModaleCrud';
 
 const MOIS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 
+type Donnees = { annee: { libelle: string } | null; lignes: LigneRetard[] };
+
 export default function Retards() {
-  const [data, setData] = useState<{ annee: { libelle: string } | null; lignes: LigneRetard[] } | null>(null);
+  const { utilisateur } = useAuth();
+  const role = utilisateur?.role;
+
+  const [data, setData] = useState<Donnees | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [succes, setSucces] = useState<string | null>(null);
+
+  const [cible, setCible] = useState<LigneRetard | null>(null);
+  const [enCours, setEnCours] = useState(false);
+  const [erreurModale, setErreurModale] = useState<string | null>(null);
+  const [rappeles, setRappeles] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    api.get<{ annee: { libelle: string } | null; lignes: LigneRetard[] }>('/finances/retards')
+    api.get<Donnees>('/finances/retards')
       .then(setData)
-      .catch((e) => setErreur(e instanceof ApiError ? e.message : 'Chargement impossible.'));
+      .catch((e) => setErreur(messageErreur(e)));
   }, []);
 
   const total = data?.lignes.reduce((s, l) => s + l.montantDu + l.penalites, 0) ?? 0;
+
+  async function envoyerRappel() {
+    if (!cible) return;
+    setEnCours(true);
+    setErreurModale(null);
+    try {
+      const r = await api.post<{ envoyes: number }>(`/finances/retards/${cible.inscriptionId}/rappel`, {});
+      setRappeles((prev) => new Set(prev).add(cible.inscriptionId));
+      setSucces(
+        `Rappel envoyé à ${r.envoyes} parent(s) de ${cible.eleve.prenom} ${cible.eleve.nom}.`,
+      );
+      setCible(null);
+    } catch (e) {
+      setErreurModale(messageErreur(e));
+    } finally {
+      setEnCours(false);
+    }
+  }
 
   return (
     <div>
@@ -31,19 +63,21 @@ export default function Retards() {
         {data
           ? data.annee
             ? `${data.annee.libelle} · ${data.lignes.length} élève(s) en retard · ${ar(total)} à recouvrer (pénalités comprises)`
-            : "Aucune année scolaire en cours."
+            : 'Aucune année scolaire en cours.'
           : 'Chargement...'}
       </p>
 
-      {erreur && <Alert variant="destructive"><AlertDescription>{erreur}</AlertDescription></Alert>}
+      {erreur && <Alert variant="destructive" role="alert" className="mb-4"><AlertDescription>{erreur}</AlertDescription></Alert>}
+      {succes && <Alert role="status" className="mb-4"><AlertDescription>{succes}</AlertDescription></Alert>}
 
       {data && (
-        <div className="rounded-lg border border-border bg-card">
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Élève</TableHead><TableHead>Salle</TableHead><TableHead>Mois impayés</TableHead>
-                <TableHead>À payer</TableHead><TableHead>Contact parent</TableHead><TableHead className="text-right">Action</TableHead>
+                <TableHead>À payer</TableHead><TableHead>Contact parent</TableHead>
+                <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -68,7 +102,21 @@ export default function Retards() {
                     ))}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button asChild size="sm"><Link href={`/dashboard/inscriptions/${l.inscriptionId}/paiements`}>Encaisser</Link></Button>
+                    {role === 'SECRETARIAT' && (
+                      <Button asChild size="sm">
+                        <Link href={`/dashboard/inscriptions/${l.inscriptionId}/paiements`}>Encaisser</Link>
+                      </Button>
+                    )}
+                    {role === 'DIRECTRICE' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={rappeles.has(l.inscriptionId)}
+                        onClick={() => { setSucces(null); setErreurModale(null); setCible(l); }}
+                      >
+                        {rappeles.has(l.inscriptionId) ? 'Rappel envoyé' : 'Rappeler'}
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -76,6 +124,21 @@ export default function Retards() {
           </Table>
         </div>
       )}
+
+      <ModaleCrud
+        ouvert={cible !== null}
+        titre="Envoyer un rappel de paiement"
+        description={
+          cible
+            ? `Les parents de ${cible.eleve.prenom} ${cible.eleve.nom} recevront une notification : ${ar(cible.montantDu + cible.penalites)} à régler, pénalités comprises. Un seul rappel est possible par jour.`
+            : ''
+        }
+        libelleValider="Envoyer le rappel"
+        enCours={enCours}
+        erreur={erreurModale}
+        onFermer={() => setCible(null)}
+        onValider={envoyerRappel}
+      />
     </div>
   );
 }

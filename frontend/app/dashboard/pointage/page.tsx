@@ -25,7 +25,7 @@ export default function Pointage() {
     <div>
       <h1 className="mb-1 text-3xl font-semibold">Pointage du personnel</h1>
       <p className="mb-6 text-sm text-muted-foreground">
-        {admin ? "Enregistrez les arrivées et départs, corrigez en cas d'oubli." : 'Consultation des présences.'}
+        {admin ? "Saisissez l'heure d'arrivée et de départ de chaque agent." : 'Consultation des présences.'}
       </p>
 
       <div role="tablist" aria-label="Sections du pointage" className="mb-6 flex gap-1 border-b border-border print:hidden">

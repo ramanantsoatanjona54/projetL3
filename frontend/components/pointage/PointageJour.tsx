@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ModaleCrud } from '@/components/structure/ModaleCrud';
+import { useActualisationAuto } from '@/lib/useActualisationAuto';
 
 type TypeModale = 'corriger' | 'manuel' | 'annuler';
 
@@ -37,7 +38,6 @@ export function PointageJour({ admin }: { admin: boolean }) {
   const [erreurPage, setErreurPage] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [recherche, setRecherche] = useState('');
-  const [enCoursId, setEnCoursId] = useState<number | null>(null);
 
   const [modale, setModale] = useState<{ type: TypeModale; agent: PresenceAgent } | null>(null);
   const [arrivee, setArrivee] = useState('');
@@ -54,6 +54,7 @@ export function PointageJour({ admin }: { admin: boolean }) {
   }, [date]);
 
   useEffect(() => { setDonnees(null); setInfo(null); charger(); }, [charger]);
+  useActualisationAuto(charger);
 
   const agents = donnees?.agents ?? [];
   const presents = agents.filter((a) => a.pointage?.heureArrivee).length;
@@ -64,41 +65,19 @@ export function PointageJour({ admin }: { admin: boolean }) {
     return agents.filter((a) => !q || normaliser(`${a.nom} ${a.prenom} ${a.matricule} ${a.poste}`).includes(q));
   }, [agents, recherche]);
 
-  async function pointerArrivee(a: PresenceAgent) {
-    setEnCoursId(a.id); setInfo(null); setErreurPage(null);
-    try {
-      const r = await api.post<{ heureArrivee: string }>(`/rh/pointages/${a.id}/arrivee`, {});
-      setInfo(`Arrivée de ${nomComplet(a)} enregistrée à ${heureLocale(r.heureArrivee)}.`);
-      charger();
-    } catch (e) {
-      setErreurPage(messageErreur(e));
-      charger();
-    } finally {
-      setEnCoursId(null);
-    }
-  }
-
-  async function pointerDepart(a: PresenceAgent) {
-    if (!a.pointage) return;
-    setEnCoursId(a.id); setInfo(null); setErreurPage(null);
-    try {
-      const r = await api.post<{ heureDepart: string }>(`/rh/pointages/${a.pointage.id}/depart`, {});
-      setInfo(`Départ de ${nomComplet(a)} enregistré à ${heureLocale(r.heureDepart)}.`);
-      charger();
-    } catch (e) {
-      setErreurPage(messageErreur(e));
-      charger();
-    } finally {
-      setEnCoursId(null);
-    }
-  }
-
   function ouvrir(type: TypeModale, agent: PresenceAgent) {
+    const p = agent.pointage;
     setModale({ type, agent });
     setErreurModale(null);
-    setMotif('');
-    setArrivee(heureLocale(agent.pointage?.heureArrivee ?? null));
-    setDepart(heureLocale(agent.pointage?.heureDepart ?? null));
+    if (type === 'manuel') {
+      setMotif('Saisie manuelle');
+      setArrivee(date === aujourdhui ? heureLocale(new Date().toISOString()) : '');
+      setDepart('');
+    } else {
+      setMotif(type === 'corriger' && p && !p.heureDepart ? "Ajout de l'heure de départ" : '');
+      setArrivee(heureLocale(p?.heureArrivee ?? null));
+      setDepart(heureLocale(p?.heureDepart ?? null));
+    }
   }
 
   async function valider() {
@@ -108,6 +87,7 @@ export function PointageJour({ admin }: { admin: boolean }) {
     if (type !== 'annuler') {
       if (!arrivee) { setErreurModale("Saisissez l'heure d'arrivée."); return; }
       if (depart && depart <= arrivee) { setErreurModale("Le départ doit être après l'arrivée."); return; }
+      
     }
     setEnCoursModale(true);
     setErreurModale(null);
@@ -126,7 +106,7 @@ export function PointageJour({ admin }: { admin: boolean }) {
           ...(depart ? { heureDepart: versIso(date, depart) } : {}), motif: motif.trim(),
         });
       }
-      setInfo(`Pointage de ${nomComplet(agent)} mis à jour.`);
+      setInfo(`Pointage de ${nomComplet(agent)} enregistré.`);
       setModale(null);
       charger();
     } catch (e) {
@@ -137,7 +117,7 @@ export function PointageJour({ admin }: { admin: boolean }) {
   }
 
   const titres: Record<TypeModale, string> = {
-    corriger: 'Corriger le pointage', manuel: 'Saisir un pointage', annuler: 'Annuler le pointage',
+    corriger: 'Modifier le pointage', manuel: 'Saisir les heures', annuler: 'Annuler le pointage',
   };
 
   return (
@@ -186,7 +166,6 @@ export function PointageJour({ admin }: { admin: boolean }) {
             ) : affiches.map((a) => {
               const s = statut(a, date, aujourdhui, donnees.ouvre);
               const p = a.pointage;
-              const occupe = enCoursId === a.id;
               return (
                 <TableRow key={a.id}>
                   <TableCell>
@@ -199,18 +178,20 @@ export function PointageJour({ admin }: { admin: boolean }) {
                   {admin && (
                     <TableCell>
                       <div className="flex flex-wrap justify-end gap-2">
-                        {!p && date === aujourdhui && (
-                          <Button size="sm" disabled={occupe} onClick={() => pointerArrivee(a)} aria-label={`Enregistrer l'arrivée de ${nomComplet(a)}`}>Arrivée</Button>
-                        )}
-                        {p && !p.heureDepart && date === aujourdhui && (
-                          <Button size="sm" disabled={occupe} onClick={() => pointerDepart(a)} aria-label={`Enregistrer le départ de ${nomComplet(a)}`}>Départ</Button>
-                        )}
-                        {!p && date !== aujourdhui && (
-                          <Button size="sm" variant="outline" onClick={() => ouvrir('manuel', a)} aria-label={`Saisir un pointage pour ${nomComplet(a)}`}>Saisir</Button>
-                        )}
-                        {p && (
+                        {!p ? (
+                          <Button size="sm" onClick={() => ouvrir('manuel', a)} aria-label={`Saisir les heures de ${nomComplet(a)}`}>
+                            Saisir les heures
+                          </Button>
+                        ) : (
                           <>
-                            <Button size="sm" variant="outline" onClick={() => ouvrir('corriger', a)} aria-label={`Corriger le pointage de ${nomComplet(a)}`}>Corriger</Button>
+                            <Button
+                              size="sm"
+                              variant={p.heureDepart ? 'outline' : 'default'}
+                              onClick={() => ouvrir('corriger', a)}
+                              aria-label={`${p.heureDepart ? 'Corriger' : 'Saisir le départ de'} ${nomComplet(a)}`}
+                            >
+                              {p.heureDepart ? 'Corriger' : 'Saisir le départ'}
+                            </Button>
                             <Button size="sm" variant="ghost" onClick={() => ouvrir('annuler', a)} aria-label={`Annuler le pointage de ${nomComplet(a)}`}>Annuler</Button>
                           </>
                         )}
@@ -228,7 +209,7 @@ export function PointageJour({ admin }: { admin: boolean }) {
         ouvert={!!modale}
         titre={modale ? titres[modale.type] : ''}
         description={modale ? `${nomComplet(modale.agent)} · ${libelleJour(date)}` : ''}
-        libelleValider={modale?.type === 'annuler' ? "Annuler le pointage" : 'Enregistrer'}
+        libelleValider={modale?.type === 'annuler' ? 'Annuler le pointage' : 'Enregistrer'}
         destructif={modale?.type === 'annuler'}
         enCours={enCoursModale} erreur={erreurModale}
         onFermer={() => { if (!enCoursModale) setModale(null); }} onValider={valider}

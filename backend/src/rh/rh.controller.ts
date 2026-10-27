@@ -9,6 +9,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RoleUtilisateur, TypeCertificat } from '@prisma/client';
+import { Audit } from '../audit/audit.decorator';
 
 @Controller('rh')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -111,6 +112,7 @@ export class RhController {
 
   @Post('certificats')
   @Roles(RoleUtilisateur.COMPTABLE, RoleUtilisateur.ADMIN)
+  @Audit('CERTIFICAT_GENERE', 'Certificat')
   genererCertificat(@Body() body: { personnelId: number; type: TypeCertificat; contenu: string }) {
     return this.rhService.genererCertificat(body.personnelId, body.type, body.contenu);
   }

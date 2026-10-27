@@ -6,6 +6,7 @@ export interface Utilisateur {
   email: string;
   role: Role;
   doitChangerMotDePasse?: boolean;
+  doitActiver2fa?: boolean;
 }
 
 export interface LoginResponse {
@@ -99,6 +100,10 @@ export interface SituationPaiement {
   };
   montantMensuel: number; totalAnnuel: number; totalPaye: number; penalitesEnCours: number;
   resteAPayer: number; annuelPaye: boolean; echeances: Echeance[]; paiements: PaiementLigne[];
+  paiementGlobal: {
+    montant: number; montantSansRemise: number; remiseAppliquee: boolean;
+    economie: number; dateLimite: string;
+  };
 }
 export interface Recu extends PaiementLigne {
   inscriptionId: number; datePrevue: string; typeFrais: { libelle?: string; code: string };
@@ -252,3 +257,162 @@ export interface AbsencesParent {
 }
 export interface NotificationLigne { id: number; message: string; lu: boolean; date: string }
 export interface MesNotifications { nonLues: number; notifications: NotificationLigne[] }
+
+export type StatutRdv = 'DEMANDE' | 'CONFIRME' | 'ANNULE' | 'TERMINE';
+export interface InterlocuteurParent { utilisateurId: number; nom: string; fonction: string }
+export interface OptionsRdv { interlocuteurs: InterlocuteurParent[]; creneaux: string[]; delaiMinHeures: number; horizonJours: number }
+export interface RdvParent { id: number; dateHeure: string; statut: StatutRdv; motif: string | null; interlocuteur: string; peutAnnuler: boolean }
+export interface ContactParent { nom: string; prenom: string; telephone: string }
+export interface LigneRdv {
+  id: number; dateHeure: string; statut: StatutRdv; motif: string | null; interlocuteur: string;
+  parent: ContactParent; enfants: string[]; peutTerminer: boolean;
+}
+export interface PageRdv { total: number; page: number; taille: number; lignes: LigneRdv[] }
+export interface RemarqueDuParent { id: number; contenu: string; traitee: boolean; date: string }
+export interface LigneRemarque { id: number; contenu: string; traitee: boolean; date: string; parent: ContactParent; enfants: string[] }
+export interface PageRemarques { total: number; page: number; taille: number; lignes: LigneRemarque[] }
+
+export interface PublicationEcole { id: number; titre: string; contenu: string; type: string; visiblePublic: boolean; date: string }
+export interface PagePublications { total: number; page: number; taille: number; lignes: PublicationEcole[] }
+export interface DossierLigne {
+  id: number; titre: string; type: string | null; date: string; nomOriginal: string | null;
+  mime: string | null; taille: number | null; aFichier: boolean; deposePar: string | null; peutSupprimer: boolean;
+}
+export interface PageDossiers { total: number; page: number; taille: number; lignes: DossierLigne[] ,   typesAutorises: string[];}
+export interface MenuDuJour { entree: string | null; platPrincipal: string | null; dessert: string | null }
+export interface JourMenuSemaine { date: string; periode: { id: number; nom: string } | null; menu: MenuDuJour | null }
+export interface SemaineMenu { lundi: string; vendredi: string; jours: JourMenuSemaine[] }
+export interface PeriodeMenuLigne { id: number; nom: string; dateDebut: string; dateFin: string; nbJours: number }
+
+export interface CreneauEdt {
+  id: number; jourSemaine: number; heureDebut: string; heureFin: string; titre: string | null;
+  matiere: { id: number; nom: string } | null;
+  enseignant: { id: number; nom: string; prenom: string } | null;
+}
+
+export interface SalleEdt { id: number; nom: string; niveaux: { id: number; nom: string }[] }
+export interface EdtSalle {
+  salle: { id: number; nom: string }; niveau: { id: number; nom: string }; annee: { id: number; libelle: string };
+  creneaux: CreneauEdt[]; enseignantsPossibles: { id: number; nom: string; prenom: string }[]; matieres: { id: number; nom: string }[];
+}
+export interface EdtParent { salle: { id: number; nom: string; niveau: string }; eleve: { prenom: string; nom: string }; creneaux: CreneauEdt[] }
+
+export type TypeArticle = 'MOBILIER' | 'FOURNITURE' | 'AUTRE';
+export interface ArticleInventaire { id: number; libelle: string; type: TypeArticle; quantite: number; dateMaj: string }
+export interface PageInventaire { total: number; page: number; taille: number; enRupture: number; lignes: ArticleInventaire[] }
+export interface LigneMouvement { id: number; type: 'ENTREE' | 'SORTIE'; quantite: number; motif: string | null; date: string; par: string }
+export interface HistoriqueInventaire {
+  article: { id: number; libelle: string; type: TypeArticle; quantite: number };
+  total: number; page: number; taille: number; lignes: LigneMouvement[];
+}
+
+export type NiveauAcquis = 'A' | 'EA' | 'AR';
+export interface SallePedago { id: number; nom: string; niveaux: { id: number; nom: string }[] }
+export interface CeinturesPedago {
+  type: 'domaines' | 'lecons'; effectif: number; ceintures: { id: number; nom: string; semestre: number }[];
+}
+export interface ElementPedago { id: number; libelle: string; evalues: number; vu?: boolean }
+export interface SectionPedago { titre: string | null; elements: ElementPedago[] }
+export interface GroupePedago { id: number; titre: string; statut?: string | null; sections: SectionPedago[] }
+export interface ElementsPedago { type: 'domaines' | 'lecons'; effectif: number; groupes: GroupePedago[] }
+export interface EleveEvaluation { inscriptionId: number; nom: string; prenom: string; matricule: string; niveau: NiveauAcquis | null }
+export interface EvaluationsElement { element: { id: number; libelle: string }; eleves: EleveEvaluation[] }
+
+export interface DisciplineExamenListe { id: number; matiereId: number; nom: string; coefficient: number; notes: number }
+export interface ExamenListe { id: number; numero: number; date: string; totalNotes: number; disciplines: DisciplineExamenListe[] }
+export interface ListeExamens { niveau: { id: number; nom: string }; examens: ExamenListe[] }
+export interface MatiereExamen { id: number; nom: string }
+export interface SalleExamen { id: number; nom: string }
+export interface EleveExamen {
+  inscriptionId: number; nom: string; prenom: string; matricule: string;
+  notes: Record<number, number | null>; moyenne: number | null; complete: boolean;
+}
+export interface DetailExamen {
+  examen: { id: number; numero: number; date: string; disciplines: { id: number; nom: string; coefficient: number }[] };
+  salle: { id: number; nom: string };
+  peutSaisir: boolean;
+  moyenneClasse: number | null;
+  moyennesDisciplines: Record<number, number | null>;
+  eleves: EleveExamen[];
+}
+
+export interface ItemBulletin { libelle: string; niveau: NiveauAcquis | null }
+export interface SectionBulletin { titre: string | null; items: ItemBulletin[] }
+export interface GroupeBulletin { titre: string; sections: SectionBulletin[] }
+export interface CeintureBulletin { nom: string; groupes: GroupeBulletin[] }
+export interface ExamenBulletin {
+  numero: number; date: string; moyenne: number | null;
+  notes: { discipline: string; coefficient: number; note: number | null }[];
+}
+export interface Bulletin {
+  inscriptionId: number;
+  eleve: { nom: string; prenom: string; matricule: string; dateNaissance: string };
+  salle: string; niveau: string; annee: string; semestre: number;
+  type: 'domaines' | 'lecons';
+  ceintures: CeintureBulletin[];
+  resume: { A: number; EA: number; AR: number; nonEvalue: number };
+  examens: ExamenBulletin[] | null;
+  appreciation: string | null;
+  publie: boolean;
+  datePublication: string | null;
+}
+export interface ClasseBulletins {
+  salle: { id: number; nom: string };
+  eleves: { inscriptionId: number; nom: string; prenom: string; matricule: string; aAppreciation: boolean; publie: boolean }[];
+}
+export interface SemestreBulletin { semestre: number; datePublication: string | null }
+
+export interface AnneeBulletin { id: number; libelle: string; courante: boolean }
+export interface HistoriqueBulletins {
+  eleve: string;
+  inscriptions: { inscriptionId: number; annee: string; niveau: string; semestres: SemestreBulletin[] }[];
+}
+
+export interface AvancementSemestre {
+  semestre: number; effectif: number; elements: number; attendues: number; saisies: number;
+  suiviTotal: number; suivi: number; bulletinsRediges: number;
+}
+export interface NiveauEspace { id: number; nom: string; type: 'domaines' | 'lecons'; effectif: number; avancement: AvancementSemestre[] }
+export interface AccueilEnseignant {
+  enseignant: { prenom: string; nom: string };
+  salle: null | { id: number; nom: string; effectif: number; niveaux: NiveauEspace[] };
+  aujourdhui: string; jourOuvre: boolean;
+  absentsAujourdhui?: { prenom: string; nom: string; justifiee: boolean }[];
+  cours?: { debut: string; fin: string; niveau: string; libelle: string }[];
+  rendezVous?: { id: number; dateHeure: string; statut: string; motif: string | null; parent: string }[];
+  examens?: { id: number; numero: number; date: string; passe: boolean; saisies: number; attendues: number }[];
+}
+export interface EleveSalle {
+  inscriptionId: number; nom: string; prenom: string; matricule: string; sexe: string;
+  dateNaissance: string; niveau: string; absences: number; nonJustifiees: number;
+}
+
+export interface EnseignantSalle { id: number; nom: string; compteEnseignant: boolean }
+export interface SalleAffectation {
+  id: number; nom: string; inscrits: number;
+  anneeScolaire: { id: number; libelle: string } | null;
+  niveaux: { id: number; nom: string; classe: { nom: string; ordre: number } | null }[];
+  enseignants: EnseignantSalle[];
+}
+export interface EnseignantAffectation {
+  id: number; nom: string; matricule: string; poste: string;
+  salle: { id: number; nom: string } | null; compteEnseignant: boolean;
+}
+export interface NiveauProgramme { id: number; nom: string; classe: { nom: string; cycle: string } }
+export interface MatiereProgramme { id: number; nom: string; rubriques: { id: number; nom: string; _count: { lecons: number } }[] }
+export interface CompetenceProg { id: number; libelle: string; _count: { notes: number } }
+export interface DomaineProg {
+  id: number; nom: string; _count: { progressions: number };
+  competences: CompetenceProg[];
+  sousDomaines: { id: number; nom: string; competences: CompetenceProg[] }[];
+}
+export interface LeconProg {
+  id: number; titre: string; ordre: number;
+  matiere: { id: number; nom: string }; rubrique: { id: number; nom: string } | null;
+  _count: { notes: number; progressions: number };
+}
+export interface ArbreProgramme {
+  niveau: { id: number; nom: string; classe: { nom: string; cycle: string } };
+  type: 'domaines' | 'lecons';
+  semestres: { id: number; numero: number; ceintures: { id: number; nom: string; domaines: DomaineProg[]; lecons: LeconProg[] }[] }[];
+}

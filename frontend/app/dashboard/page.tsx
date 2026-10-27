@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -13,6 +13,7 @@ import type { TableauDeBord } from '@/lib/types';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { buttonVariants } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useActualisationAuto } from '@/lib/useActualisationAuto';
 
 const LIBELLES_ROLE: Record<string, string> = {
   ADMIN: 'Administrateur', ENSEIGNANT: 'Enseignant', SECRETARIAT: 'Secrétariat',
@@ -55,10 +56,15 @@ export default function Accueil() {
   const [d, setD] = useState<TableauDeBord | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
 
-  useEffect(() => {
+  const charger = useCallback(() => {
     if (!role || role === 'PARENT') return;
-    api.get<TableauDeBord>('/tableau-de-bord').then(setD).catch((e) => setErreur(messageErreur(e)));
+    api.get<TableauDeBord>('/tableau-de-bord')
+      .then((r) => { setD(r); setErreur(null); })
+      .catch((e) => setErreur(messageErreur(e)));
   }, [role]);
+
+  useEffect(() => { charger(); }, [charger]);
+  useActualisationAuto(charger);
 
   if (!role || role === 'PARENT') return null; // le parent est redirigé vers son espace
 
@@ -90,10 +96,12 @@ export default function Accueil() {
             {d.eleves && (
               <>
                 <Tuile href="/dashboard/eleves" libelle="Élèves inscrits" valeur={String(d.eleves.effectif)} detail="Inscriptions validées de l'année" />
-                <Tuile
-                  href="/dashboard/inscriptions" libelle="Inscriptions en attente" valeur={String(d.eleves.enAttente)}
-                  detail={d.eleves.enAttente > 0 ? 'À valider par le secrétariat' : 'Rien à valider'}
-                />
+                {role !== 'ADMIN' && (
+                  <Tuile
+                    href="/dashboard/inscriptions" libelle="Inscriptions en attente" valeur={String(d.eleves.enAttente)}
+                    detail={d.eleves.enAttente > 0 ? 'À valider par le secrétariat' : 'Rien à valider'}
+                  />
+                )}
               </>
             )}
             {d.finances && (

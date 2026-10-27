@@ -7,6 +7,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RoleUtilisateur } from '@prisma/client';
 import { UpdateEleveDto } from './dto/update-eleve.dto';
+import { Audit } from '../audit/audit.decorator';
 
 @Controller('eleves')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -14,7 +15,8 @@ export class ElevesController {
   constructor(private readonly service: ElevesService) {}
 
   @Post()
-  @Roles(RoleUtilisateur.ADMIN, RoleUtilisateur.SECRETARIAT)
+  @Roles(RoleUtilisateur.ADMIN)
+  @Audit('ELEVE_CREE', 'Eleve')
   creerEleve(@Body() dto: CreateEleveDto) {
     return this.service.creerEleve(dto);
   }
@@ -33,6 +35,7 @@ export class ElevesController {
 
   @Post(':id/parents')
   @Roles(RoleUtilisateur.ADMIN, RoleUtilisateur.SECRETARIAT)
+  @Audit('PARENT_LIE_ELEVE', 'Eleve')
   ajouterParent(@Param('id', ParseIntPipe) id: number, @Body() dto: AjouterParentDto) {
     return this.service.ajouterParent(id, dto);
   }

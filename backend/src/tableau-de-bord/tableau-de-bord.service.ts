@@ -32,8 +32,8 @@ export class TableauDeBordService {
 
     const [eleves, finances, personnel, comptes, activiteRecente] = await Promise.all([
       dans(ADMIN, DIRECTRICE, SECRETARIAT) ? this.voletEleves(annee?.id, role) : undefined,
-      dans(ADMIN, DIRECTRICE, COMPTABLE) ? this.voletFinances(role) : undefined,
-      dans(ADMIN, DIRECTRICE) ? this.voletPersonnel() : undefined,
+      dans(DIRECTRICE, SECRETARIAT) ? this.voletFinances(role) : undefined,
+      dans(ADMIN, DIRECTRICE, COMPTABLE) ? this.voletPersonnel() : undefined,
       dans(ADMIN) ? this.voletComptes() : undefined,
       dans(ADMIN, DIRECTRICE) ? this.audit.recentes(8) : undefined,
     ]);
@@ -46,7 +46,9 @@ export class TableauDeBordService {
 
     const [effectif, enAttente] = await Promise.all([
       this.prisma.inscription.count({ where: { anneeScolaireId: anneeId, statut: 'validee' } }),
-      this.prisma.inscription.count({ where: { anneeScolaireId: anneeId, statut: 'en_attente' } }),
+      role === ADMIN
+        ? Promise.resolve(0)
+        : this.prisma.inscription.count({ where: { anneeScolaireId: anneeId, statut: 'en_attente' } }),
     ]);
 
     let parSalle: { salle: string; effectif: number }[] = [];
@@ -100,7 +102,7 @@ export class TableauDeBordService {
     const lignes = retards.lignes as any[];
 
     const derniersPaiements =
-      role === COMPTABLE
+      role === SECRETARIAT
         ? (
             await this.prisma.paiement.findMany({
               where: { statut: 'paye' },

@@ -104,7 +104,19 @@ export class FinancesService {
     }
     return { echeances, annuelPaye };
   }
-
+    // Paiement global : un mois offert si réglé au plus tard le dernier jour du mois de la rentrée (heure de Madagascar, UTC+3)
+  private offreGlobale(annee: { dateDebut: Date }, nbEcheances: number, montantMensuel: number, maintenant: Date) {
+    const dateLimite = new Date(
+      Date.UTC(annee.dateDebut.getUTCFullYear(), annee.dateDebut.getUTCMonth() + 1, 1) - 3 * 3600 * 1000 - 1,
+    );
+    const montantSansRemise = montantMensuel * nbEcheances;
+    const remise = nbEcheances > 1 && maintenant <= dateLimite;
+    return {
+      remise, dateLimite,
+      montantSansRemise,
+      montant: remise ? montantMensuel * (nbEcheances - 1) : montantSansRemise,
+    };
+  }
   // ================= Lecture =================
   private async chargerInscription(id: number) {
     const i = await this.prisma.inscription.findUnique({
@@ -140,6 +152,7 @@ export class FinancesService {
 
     const totalAnnuel = montantMensuel * echeances.length;
     const totalPaye = actifs.reduce((s, p) => s + Number(p.montant), 0);
+        const offre = this.offreGlobale(inscription.anneeScolaire, echeances.length, montantMensuel, new Date());
     return {
       inscription: {
         id: inscription.id, statut: inscription.statut, rangFratrie: inscription.rangFratrie,
@@ -148,7 +161,14 @@ export class FinancesService {
       },
       montantMensuel, totalAnnuel, totalPaye, annuelPaye,
       penalitesEnCours: echeances.reduce((s, e) => s + e.penalite, 0),
-      resteAPayer: Math.max(0, totalAnnuel - totalPaye),
+            resteAPayer: annuelPaye ? 0 : Math.max(0, totalAnnuel - totalPaye),
+      paiementGlobal: {
+        montant: offre.montant,
+        montantSansRemise: offre.montantSansRemise,
+        remiseAppliquee: offre.remise,
+        economie: offre.montantSansRemise - offre.montant,
+        dateLimite: offre.dateLimite.toISOString(),
+      },
       echeances, paiements,
     };
   }
@@ -162,6 +182,7 @@ export class FinancesService {
 
   // ================= Encaissement =================
   async creerPaiement(dto: CreatePaiementDto, utilisateurId?: number) {
+    
     const inscription = await this.chargerInscription(dto.inscriptionId);
     if (inscription.statut !== 'validee') {
       throw new ConflictException('Les paiements ne sont possibles que pour une inscription validée.');
@@ -179,6 +200,7 @@ export class FinancesService {
     let penalite = 0;
     let datePrevue: Date;
     let mois: number | null = null;
+    let remise = 0;
 
     if (dto.mode === ModePaiement.MENSUEL) {
       const e = echeances.find((x) => x.mois === dto.moisConcerne);
@@ -189,7 +211,9 @@ export class FinancesService {
       if (actifs.length > 0) {
         throw new ConflictException('Des mensualités sont déjà payées : réglez les mois restants un par un.');
       }
-      montant = montantMensuel * echeances.length;
+            const offre = this.offreGlobale(inscription.anneeScolaire, echeances.length, montantMensuel, maintenant);
+      montant = offre.montant;
+      remise = offre.remise ? montantMensuel : 0;
       datePrevue = inscription.anneeScolaire.dateDebut;
     }
 
@@ -208,7 +232,7 @@ export class FinancesService {
         await tx.journalAudit.create({
           data: {
             utilisateurId, action: 'PAIEMENT_ENREGISTRE', entite: 'Paiement', entiteId: p.id,
-            details: { inscriptionId: inscription.id, mode: dto.mode, mois, montant, penalite, numeroRecu },
+            details: { inscriptionId: inscription.id, mode: dto.mode, mois, montant, penalite,remise, numeroRecu },
           },
         });
         return maj;

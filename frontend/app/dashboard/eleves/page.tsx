@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState , useCallback } from 'react';
 import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import { normaliser } from '@/lib/normaliser';
@@ -9,17 +9,23 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useActualisationAuto } from '@/lib/useActualisationAuto';
+import { useAuth } from '@/context/AuthContext';
 
 export default function ElevesPage() {
   const [eleves, setEleves] = useState<Eleve[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [recherche, setRecherche] = useState('');
+  const { utilisateur } = useAuth();
 
-  useEffect(() => {
+  const charger = useCallback(() => {
     api.get<Eleve[] | { data: Eleve[] }>('/eleves')
-      .then((r) => setEleves(Array.isArray(r) ? r : r.data))
+      .then((r) => { setEleves(Array.isArray(r) ? r : r.data); setErreur(null); })
       .catch((e) => setErreur(e instanceof ApiError ? e.message : 'Chargement impossible.'));
   }, []);
+
+  useEffect(() => { charger(); }, [charger]);
+  useActualisationAuto(charger);
 
   const filtres = useMemo(() => {
     if (!eleves) return [];
@@ -37,7 +43,9 @@ export default function ElevesPage() {
             {eleves ? `${filtres.length} élève(s) affiché(s) sur ${eleves.length}` : 'Chargement...'}
           </p>
         </div>
-        <Button asChild size="lg"><Link href="/dashboard/eleves/nouveau">Nouvel élève</Link></Button>
+                {utilisateur?.role === 'ADMIN' && (
+          <Button asChild size="lg"><Link href="/dashboard/eleves/nouveau">Nouvel élève</Link></Button>
+        )}
       </div>
 
       <Input

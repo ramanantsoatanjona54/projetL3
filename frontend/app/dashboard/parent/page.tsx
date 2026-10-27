@@ -93,6 +93,12 @@ function CarteEnfant({ e }: { e: EnfantParent }) {
                 <Link href={`/dashboard/parent/inscriptions/${courante.id}/absences`} className={buttonVariants({ size: 'lg', variant: 'outline' })}>
                   Voir les absences
                 </Link>
+                                <Link href={`/dashboard/parent/inscriptions/${courante.id}/emploi-du-temps`} className={buttonVariants({ size: 'lg', variant: 'outline' })}>
+                  Emploi du temps
+                </Link>
+                <Link href={`/dashboard/parent/inscriptions/${courante.id}/bulletins`} className={buttonVariants({ size: 'lg', variant: 'outline' })}>
+  Bulletins
+</Link>
               </div>
             )}
           </>

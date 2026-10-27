@@ -150,6 +150,11 @@ export class UtilisateursService {
         where: { id },
         data: { motDePasseHash, doitChangerMotDePasse: true, tentativesEchouees: 0, verrouilleJusqua: null },
       }),
+      // Déconnecte toutes les sessions ouvertes de l'utilisateur ciblé
+      this.prisma.session.updateMany({
+        where: { utilisateurId: id, revoquee: false },
+        data: { revoquee: true },
+      }),
       this.prisma.journalAudit.create({
         data: {
           utilisateurId: adminId, action: 'MOT_DE_PASSE_REINITIALISE', entite: 'Utilisateur', entiteId: id,

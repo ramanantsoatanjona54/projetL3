@@ -17,7 +17,7 @@ interface Props {
   erreur: string | null;
   onFermer: () => void;
   onValider: () => void;
-  children: ReactNode;
+  children?: ReactNode;
 }
 
 export function ModaleCrud({

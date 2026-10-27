@@ -199,8 +199,8 @@ export default function FicheEleve() {
             <dl className="grid gap-4 sm:grid-cols-2">
               <Info label="Téléphone">{eleve.telephone}</Info>
               <Info label="Quartier">{eleve.quartier}</Info>
-              <Info label="Email principal">{eleve.email1}</Info>
-              <Info label="Email secondaire">{eleve.email2}</Info>
+              <Info label="Email principal">{eleve.email1 && <span className="break-all">{eleve.email1}</span>}</Info>
+              <Info label="Email secondaire">{eleve.email2 && <span className="break-all">{eleve.email2}</span>}</Info>
               <Info label="Profession du père">{eleve.professionPere}</Info>
               <Info label="Profession de la mère">{eleve.professionMere}</Info>
             </dl>

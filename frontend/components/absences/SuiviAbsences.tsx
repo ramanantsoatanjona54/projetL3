@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ModaleCrud } from '@/components/structure/ModaleCrud';
+import { useActualisationAuto } from '@/lib/useActualisationAuto';
 
 const TOUS = 'tous';
 const VIDE = { salleId: '', du: '', au: '', statut: '', q: '' };
@@ -45,7 +46,7 @@ export function SuiviAbsences({ peutJustifier }: { peutJustifier: boolean }) {
   }, [appliques, page]);
 
   useEffect(() => { setDonnees(null); charger(); }, [charger]);
-
+  useActualisationAuto(charger);
   function appliquer(e: FormEvent) {
     e.preventDefault();
     if (saisie.du && saisie.au && saisie.du > saisie.au) { setErreur('La date de début doit précéder la date de fin.'); return; }

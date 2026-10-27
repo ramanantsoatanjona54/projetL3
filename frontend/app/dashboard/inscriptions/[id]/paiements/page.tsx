@@ -44,8 +44,8 @@ export default function PaiementsInscription() {
   const router = useRouter();
   const { utilisateur } = useAuth();
   const role = utilisateur?.role;
-  const peutEncaisser = role === 'ADMIN' || role === 'COMPTABLE' || role === 'DIRECTRICE';
-  const peutAnnuler = role === 'ADMIN' || role === 'COMPTABLE';
+  const peutEncaisser = role === 'SECRETARIAT';
+  const peutAnnuler = role === 'SECRETARIAT';
 
   const [s, setS] = useState<SituationPaiement | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -125,8 +125,8 @@ export default function PaiementsInscription() {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Échéancier</CardTitle>
           {peutEncaisser && s.inscription.statut === 'validee' && aucunPaiementActif && (
-            <Button variant="outline" onClick={() => setCible({ type: 'annuel' })}>
-              Payer l&apos;année entière ({ar(s.totalAnnuel)})
+              <Button variant="outline" onClick={() => setCible({ type: 'annuel' })}>
+              Payer l&apos;année entière ({ar(s.paiementGlobal.montant)})
             </Button>
           )}
         </CardHeader>
@@ -225,8 +225,19 @@ export default function PaiementsInscription() {
               <p className="pt-2 text-lg font-semibold">Total à encaisser : {ar(cible.e.montant + cible.e.penalite)}</p>
             </div>
           )}
-          {cible?.type === 'annuel' && (
-            <p className="text-lg font-semibold">Total à encaisser : {ar(s.totalAnnuel)}</p>
+                   {cible?.type === 'annuel' && (
+            <div className="space-y-1">
+              {s.paiementGlobal.remiseAppliquee ? (
+                <>
+                  <p>Un mois est offert pour un paiement avant le {dateFr(s.paiementGlobal.dateLimite)}.</p>
+                  <p className="text-muted-foreground">Montant sans réduction : {ar(s.paiementGlobal.montantSansRemise)}</p>
+                  <p className="text-muted-foreground">Économie : {ar(s.paiementGlobal.economie)}</p>
+                </>
+              ) : (
+                <p className="text-muted-foreground">La réduction d&apos;un mois n&apos;est plus applicable (date limite dépassée).</p>
+              )}
+              <p className="pt-2 text-lg font-semibold">Total à encaisser : {ar(s.paiementGlobal.montant)}</p>
+            </div>
           )}
           {cible?.type === 'annuler' && (
             <div className="space-y-2">

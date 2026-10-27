@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/context/AuthContext';
+import { useActualisationAuto } from '@/lib/useActualisationAuto';
 
 // ...
 
@@ -24,17 +25,20 @@ export default function InscriptionsEnAttente() {
   const [erreurAction, setErreurAction] = useState<string | null>(null);
   const [resultat, setResultat] = useState<ResultatValidation | null>(null);
   const { utilisateur } = useAuth();
-const peutValider = utilisateur?.role === 'SECRETARIAT';
-const peutAnnuler = utilisateur?.role === 'SECRETARIAT' || utilisateur?.role === 'ADMIN';
+  const role = utilisateur?.role;
+  const autorise = role === 'SECRETARIAT' || role === 'DIRECTRICE';
+  const peutValider = role === 'SECRETARIAT';
+  const peutAnnuler = role === 'SECRETARIAT';
   
 
-  const charger = useCallback(() => {
+const charger = useCallback(() => {
     api.get<InscriptionAttente[]>('/inscriptions/en-attente')
-      .then(setItems)
+      .then((r) => { setItems(r); setErreur(null); })
       .catch((e) => setErreur(e instanceof ApiError ? e.message : 'Chargement impossible.'));
   }, []);
 
   useEffect(() => { charger(); }, [charger]);
+  useActualisationAuto(charger);
 
   async function confirmer() {
     if (!action || enCours) return;

@@ -8,6 +8,7 @@ import type { MesNotifications } from '@/lib/types';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useActualisationAuto } from '@/lib/useActualisationAuto';
 
 export default function Notifications() {
   const [d, setD] = useState<MesNotifications | null>(null);
@@ -17,6 +18,7 @@ export default function Notifications() {
     api.get<MesNotifications>('/notifications').then((r) => { setD(r); setErreur(null); }).catch((e) => setErreur(messageErreur(e)));
   }, []);
   useEffect(() => { charger(); }, [charger]);
+   useActualisationAuto(charger, 15000);
 
   async function lire(id: number) {
     try { await api.patch(`/notifications/${id}/lu`, {}); charger(); } catch (e) { setErreur(messageErreur(e)); }

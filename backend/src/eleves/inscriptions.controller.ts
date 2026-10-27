@@ -15,7 +15,7 @@ export class InscriptionsController {
   constructor(private readonly inscriptionsService: InscriptionsService) {}
 
   @Get('en-attente')
-  @Roles(RoleUtilisateur.SECRETARIAT, RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTRICE)
+  @Roles(RoleUtilisateur.SECRETARIAT, RoleUtilisateur.DIRECTRICE)
   listerEnAttente() {
     return this.inscriptionsService.listerEnAttente();
   }

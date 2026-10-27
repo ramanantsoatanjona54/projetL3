@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
-import { ReferentielController } from './referentiel/referentiel.controller';
-import { ReferentielService } from './referentiel/referentiel.service';
-import { EvaluationsController } from './evaluations/evaluations.controller';
-import { EvaluationsService } from './evaluations/evaluations.service';
-import { BulletinsController } from './bulletins/bulletins.controller';
-import { BulletinsService } from './bulletins/bulletins.service';
+import { BulletinsController, ParentBulletinsController } from './bulletins.controller';
+import { BulletinsService } from './bulletins.service';
+import { EvaluationsController } from './evaluations.controller';
+import { EvaluationsService } from './evaluations.service';
+import { ExamensController } from './examens.controller';
+import { ExamensService } from './examens.service';
 
 @Module({
-  controllers: [ReferentielController, EvaluationsController, BulletinsController],
-  providers: [ReferentielService, EvaluationsService, BulletinsService],
-  exports: [ReferentielService, EvaluationsService, BulletinsService],
+  controllers: [EvaluationsController, ExamensController, BulletinsController, ParentBulletinsController],
+  providers: [EvaluationsService, ExamensService, BulletinsService],
+  exports: [EvaluationsService, ExamensService, BulletinsService],
 })
 export class PedagogieModule {}

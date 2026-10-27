@@ -20,37 +20,37 @@ export class AbsencesController {
   }
 
   @Get('salles')
-  @Roles(ENSEIGNANT, ADMIN, SECRETARIAT, DIRECTRICE)
+  @Roles(ENSEIGNANT,SECRETARIAT, DIRECTRICE)
   salles(@Req() req: any) {
     return this.service.salles(this.acteur(req));
   }
 
   @Get('appel')
-  @Roles(ENSEIGNANT, ADMIN, SECRETARIAT, DIRECTRICE)
+  @Roles(ENSEIGNANT, SECRETARIAT, DIRECTRICE)
   appel(@Query('salleId', ParseIntPipe) salleId: number, @Query('date') date: string, @Req() req: any) {
     return this.service.appel(salleId, date, this.acteur(req));
   }
 
   @Post('appel')
-  @Roles(ENSEIGNANT, ADMIN, SECRETARIAT)
+  @Roles(ENSEIGNANT, SECRETARIAT)
   enregistrerAppel(@Body() dto: SaisirAppelDto, @Req() req: any) {
     return this.service.enregistrerAppel(dto, this.acteur(req));
   }
 
   @Get()
-  @Roles(ENSEIGNANT, ADMIN, SECRETARIAT, DIRECTRICE)
+  @Roles(ENSEIGNANT, SECRETARIAT, DIRECTRICE)
   lister(@Query() q: FiltresAbsences, @Req() req: any) {
     return this.service.lister(q, this.acteur(req));
   }
 
   @Patch(':id/justifier')
-  @Roles(ADMIN, SECRETARIAT)
+  @Roles(SECRETARIAT)
   justifier(@Param('id', ParseIntPipe) id: number, @Body() dto: JustifierAbsenceDto, @Req() req: any) {
     return this.service.justifier(id, dto, this.acteur(req));
   }
 
   @Patch(':id/annuler-justification')
-  @Roles(ADMIN, SECRETARIAT)
+  @Roles(SECRETARIAT)
   annulerJustification(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     return this.service.annulerJustification(id, this.acteur(req));
   }

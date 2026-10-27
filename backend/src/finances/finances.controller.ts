@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { FinancesService } from './finances.service';
+import { RappelsService } from './rappels.service';
 import { CreatePaiementDto } from './dto/create-paiement.dto';
 import { AnnulerPaiementDto } from './dto/annuler-paiement.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -14,7 +15,10 @@ const { ADMIN, COMPTABLE, DIRECTRICE, SECRETARIAT, PARENT } = RoleUtilisateur;
 @Controller('finances')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class FinancesController {
-  constructor(private readonly financesService: FinancesService) {}
+  constructor(
+    private readonly financesService: FinancesService,
+    private readonly rappels: RappelsService,
+  ) {}
 
   // ---- Barème ----
   @Get('frais')
@@ -53,26 +57,36 @@ export class FinancesController {
 
   // ---- Retards ----
   @Get('retards')
-  @Roles(ADMIN, COMPTABLE, DIRECTRICE)
+  @Roles(SECRETARIAT, DIRECTRICE)
   retards() { return this.financesService.retards(); }
+
+  // ---- Rappel aux parents : directrice seulement ----
+  @Post('retards/:inscriptionId/rappel')
+  @Roles(DIRECTRICE)
+  rappeler(
+    @Param('inscriptionId', ParseIntPipe) inscriptionId: number,
+    @Req() req: any,
+  ): Promise<unknown> {
+    return this.rappels.rappeler(inscriptionId, req.user.id);
+  }
 
   // ---- Situation et paiements d'une inscription (un parent ne voit que ses enfants) ----
   @Get('inscriptions/:inscriptionId/situation')
-  @Roles(ADMIN, COMPTABLE, DIRECTRICE, PARENT)
+  @Roles(SECRETARIAT, DIRECTRICE, PARENT)
   async situation(@Param('inscriptionId', ParseIntPipe) inscriptionId: number, @Req() req: any) {
     if (req.user.role === PARENT) await this.financesService.verifierAccesParent(inscriptionId, req.user.id);
     return this.financesService.situation(inscriptionId);
   }
 
   @Get('inscriptions/:inscriptionId/paiements')
-  @Roles(ADMIN, COMPTABLE, DIRECTRICE, PARENT)
+  @Roles(SECRETARIAT, DIRECTRICE, PARENT)
   async listerPaiements(@Param('inscriptionId', ParseIntPipe) inscriptionId: number, @Req() req: any) {
     if (req.user.role === PARENT) await this.financesService.verifierAccesParent(inscriptionId, req.user.id);
     return this.financesService.listerPaiements(inscriptionId);
   }
 
   @Get('inscriptions/:inscriptionId/statut/:mois')
-  @Roles(ADMIN, COMPTABLE, DIRECTRICE, SECRETARIAT, PARENT)
+  @Roles(SECRETARIAT, DIRECTRICE, PARENT)
   async statutPaiement(
     @Param('inscriptionId', ParseIntPipe) inscriptionId: number,
     @Param('mois', ParseIntPipe) mois: number,
@@ -84,19 +98,19 @@ export class FinancesController {
 
   // ---- Encaissement, annulation, reçu ----
   @Post('paiements')
-  @Roles(ADMIN, COMPTABLE, DIRECTRICE)
+  @Roles(SECRETARIAT)
   creerPaiement(@Body() dto: CreatePaiementDto, @Req() req: any) {
     return this.financesService.creerPaiement(dto, req.user?.id);
   }
 
   @Patch('paiements/:id/annuler')
-  @Roles(ADMIN, COMPTABLE)
+  @Roles(SECRETARIAT)
   annuler(@Param('id', ParseIntPipe) id: number, @Body() dto: AnnulerPaiementDto, @Req() req: any) {
     return this.financesService.annulerPaiement(id, dto.motif, req.user?.id);
   }
 
   @Get('paiements/:id/recu')
-  @Roles(ADMIN, COMPTABLE, DIRECTRICE, PARENT)
+  @Roles(SECRETARIAT, DIRECTRICE, PARENT)
   async recu(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     const recu = await this.financesService.recu(id);
     if (req.user.role === PARENT) await this.financesService.verifierAccesParent(recu.inscriptionId, req.user.id);

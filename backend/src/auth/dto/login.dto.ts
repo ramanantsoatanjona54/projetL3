@@ -1,10 +1,10 @@
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class LoginDto {
-  @IsEmail()
+  @IsEmail() @MaxLength(254)
   email: string;
 
-  @IsString()
-  @MinLength(8)
+  // Pas de longueur minimale élevée ici : un mot de passe faux, court ou long, doit toujours produire le même 401 et compter comme un essai
+  @IsString() @MinLength(1) @MaxLength(128)
   motDePasse: string;
 }

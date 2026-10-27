@@ -252,10 +252,6 @@ export class PointageService {
       if (jourLocalIso(depart) !== iso) throw new BadRequestException('Le départ doit être dans la même journée.');
       if (depart <= arrivee) throw new BadRequestException("Le départ doit être après l'arrivée.");
     }
-    const limite = Date.now() + 5 * 60_000;
-    if (arrivee.getTime() > limite || (depart && depart.getTime() > limite)) {
-      throw new BadRequestException('Une heure ne peut pas être dans le futur.');
-    }
   }
 
   private async exiger(id: number) {

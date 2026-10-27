@@ -42,6 +42,7 @@ export class CreateEleveDto {
 
   @IsOptional()
   @IsString()
+  @IsString() @MaxLength(500)
   dossiersManquants?: string;
 
   @IsOptional()

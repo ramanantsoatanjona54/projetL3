@@ -1,29 +1,25 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  app.use(helmet()); // en-têtes de sécurité (CSP, X-Frame-Options, etc.)
+  // Un seul relais de confiance devant l'API (Next.js ou Nginx) : req.ip = adresse réelle du client
+  app.set('trust proxy', 1);
+  app.use(helmet());
+  app.useBodyParser('json', { limit: '1mb' }); // les dépôts de fichiers passent par une route Next.js dédiée, pas par ce corps JSON
 
-  app.enableCors({
-    origin: process.env.FRONTEND_URL, // ex. http://localhost:3000 en dev
-    credentials: true,
-  });
+  // Pas de CORS : l'API n'est appelée que par le serveur Next.js, jamais directement par un navigateur.
 
-  // Validation systématique des DTO entrants (jamais confiance au seul frontend)
   app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true, // rejette les champs non déclarés dans le DTO
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
+    new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
   );
-
   app.setGlobalPrefix('api');
 
-  await app.listen(process.env.PORT ?? 3001);
+  // Écoute sur la machine locale par défaut (HOST=0.0.0.0 seulement dans un conteneur Docker)
+  await app.listen(Number(process.env.PORT ?? 3001), process.env.API_HOTE ?? '127.0.0.1');
 }
 bootstrap();
