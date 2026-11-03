@@ -34,19 +34,16 @@ export async function creerPedagogie(ctx: Ctx): Promise<void> {
   }
   const enseignantDe = (e: EleveCtx): number => ctx.salles.find((s) => s.id === e.salleId)?.enseignantPersonnelId as number;
 
-  let nbCompetences = 0, nbLecons = 0, nbProg = 0;
+  let nbEvals = 0, nbProg = 0;
+  const niveauxAvecContenu = new Set<number>(); // niveaux dont le bulletin a un contenu défini (seed-bulletin)
+  const lignesParNiveau = new Map<number, number[]>();
 
   for (const { niveau, salles } of niveaux.values()) {
-    const eleves = validees.filter((e) => e.niveauId === niveau.id);
     const semestre1 = { semestre: { niveauId: niveau.id, numero: 1 } };
 
     if (niveau.cycle === 'prescolaire') {
       // ---- Classe 1 : domaines / compétences ----
       const domaines = await prisma.domaine.findMany({ where: { ceinture: semestre1 }, orderBy: { id: 'asc' }, select: { id: true } });
-      const competences = await prisma.competence.findMany({
-        where: { OR: [{ domaine: { ceinture: semestre1 } }, { sousDomaine: { domaine: { ceinture: semestre1 } } }] },
-        orderBy: { id: 'asc' }, select: { id: true },
-      });
 
       const progressions: Prisma.ProgressionDomaineCreateManyInput[] = [];
       for (const s of salles) {
@@ -63,19 +60,6 @@ export async function creerPedagogie(ctx: Ctx): Promise<void> {
       if (progressions.length) await prisma.progressionDomaine.createMany({ data: progressions, skipDuplicates: true });
       nbProg += progressions.length;
 
-      const evaluees = competences.slice(0, Math.min(80, Math.ceil(competences.length * 0.45)));
-      const notes: Prisma.NoteCompetenceCreateManyInput[] = [];
-      for (const e of eleves) {
-        const aptitude = 0.6 + alea.suivant() * 0.7;
-        for (const c of evaluees) {
-          notes.push({
-            inscriptionId: e.inscriptionId, competenceId: c.id, niveau: niveauAleatoire(alea, aptitude),
-            enseignantId: enseignantDe(e), dateSaisie: new Date(maintenant.getTime() - alea.entier(1, 35) * 86_400_000),
-          });
-        }
-      }
-      await parLots(notes, 2000, (lot) => prisma.noteCompetence.createMany({ data: lot, skipDuplicates: true }));
-      nbCompetences += notes.length;
     } else {
       // ---- Classes 2 et 3 : leçons ----
       const lecons = await prisma.lecon.findMany({
@@ -97,21 +81,36 @@ export async function creerPedagogie(ctx: Ctx): Promise<void> {
       await parLots(progressions, 2000, (lot) => prisma.progressionLecon.createMany({ data: lot, skipDuplicates: true }));
       nbProg += progressions.length;
 
-      const evaluees = enseignees.slice(0, Math.min(60, Math.ceil(lecons.length * 0.5)));
-      const notes: Prisma.NoteLeconCreateManyInput[] = [];
-      for (const e of eleves) {
-        const aptitude = 0.6 + alea.suivant() * 0.7;
-        for (const l of evaluees) {
-          notes.push({
-            inscriptionId: e.inscriptionId, leconId: l.id, niveau: niveauAleatoire(alea, aptitude),
-            enseignantId: enseignantDe(e), dateSaisie: new Date(maintenant.getTime() - alea.entier(1, 35) * 86_400_000),
-          });
-        }
-      }
-      await parLots(notes, 2000, (lot) => prisma.noteLecon.createMany({ data: lot, skipDuplicates: true }));
-      nbLecons += notes.length;
+    }
+
+    // ---- Évaluations du bulletin (lignes définies par l'administrateur) ----
+    const lignes = await prisma.elementBulletin.findMany({
+      where: { type: 'LIGNE', archiveLe: null, semestre: { niveauId: niveau.id, numero: 1 } }, select: { id: true },
+    });
+    if (lignes.length) {
+      niveauxAvecContenu.add(niveau.id);
+      lignesParNiveau.set(niveau.id, lignes.map((l) => l.id));
     }
   }
+
+  // Salle n°1 : bulletins complets (publiables) ; salle n°2 : évaluation partielle (environ 60 %)
+  const rangSalle = new Map(ctx.salles.map((s, i) => [s.id, i]));
+  const evaluations: Prisma.EvaluationBulletinCreateManyInput[] = [];
+  for (const e of validees) {
+    const ids = lignesParNiveau.get(e.niveauId);
+    const r = rangSalle.get(e.salleId);
+    if (!ids || (r !== 0 && r !== 1)) continue;
+    const aptitude = 0.6 + alea.suivant() * 0.7;
+    for (const id of ids) {
+      if (r === 1 && !alea.proba(0.6)) continue;
+      evaluations.push({
+        inscriptionId: e.inscriptionId, elementId: id, niveau: niveauAleatoire(alea, aptitude),
+        enseignantId: enseignantDe(e), dateSaisie: new Date(maintenant.getTime() - alea.entier(1, 35) * 86_400_000),
+      });
+    }
+  }
+  await parLots(evaluations, 2000, (lot) => prisma.evaluationBulletin.createMany({ data: lot, skipDuplicates: true }));
+  nbEvals = evaluations.length;
 
   // ---- Enseignants des classes 2 et 3 : toutes les matières ----
   const matieres = await prisma.matiere.findMany({ select: { id: true } });
@@ -123,14 +122,13 @@ export async function creerPedagogie(ctx: Ctx): Promise<void> {
     skipDuplicates: true,
   });
 
-  // ---- Bulletins : salle n°1 publiée, salle n°2 en brouillon (appréciation seule) ----
-  const rangSalle = new Map(ctx.salles.map((s, i) => [s.id, i]));
+  // ---- Bulletins : salle n°1 publiée si son contenu est défini (donc complet), salle n°2 en brouillon ----
   const bulletins: Prisma.BulletinCreateManyInput[] = [];
   const notifs: Prisma.NotificationCreateManyInput[] = [];
   for (const e of validees) {
     const r = rangSalle.get(e.salleId);
     if (r !== 0 && r !== 1) continue;
-    const publie = r === 0;
+    const publie = r === 0 && niveauxAvecContenu.has(e.niveauId);
     const datePub = new Date(maintenant.getTime() - alea.entier(1, 6) * 86_400_000);
     bulletins.push({
       inscriptionId: e.inscriptionId, periode: 'Semestre 1', appreciationGenerale: alea.choisir(APPRECIATIONS),
@@ -194,7 +192,7 @@ export async function creerPedagogie(ctx: Ctx): Promise<void> {
   }
 
   console.log(
-    `     Pédagogie : ${nbCompetences} notes de compétence · ${nbLecons} notes de leçon · ${nbProg} progressions · ` +
+    `     Pédagogie : ${nbEvals} évaluations de bulletin · ${nbProg} progressions · ` +
       `${bulletins.length} bulletins · ${nbExamens} examens blancs`,
   );
 }

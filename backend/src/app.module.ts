@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
@@ -21,6 +21,7 @@ import { EspaceEnseignantModule } from './espace-enseignant/espace-enseignant.mo
 import { SessionThrottlerGuard } from './common/session-throttler.guard';
 import { AffectationsModule } from './affectations/affectations.module';
 import { ProgrammesModule } from './programmes/programmes.module';
+import { BulletinModelesModule } from './bulletin-modeles/bulletin-modeles.module';
 @Module({
   imports: [
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
@@ -43,6 +44,7 @@ import { ProgrammesModule } from './programmes/programmes.module';
     EspaceEnseignantModule,
     AffectationsModule,
     ProgrammesModule,
+    BulletinModelesModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: SessionThrottlerGuard }],
 })

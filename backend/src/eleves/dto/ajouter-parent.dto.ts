@@ -1,26 +1,26 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEmail, IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { EstNomPropre, EstTelephone } from '../../common/validation';
 
 export class AjouterParentDto {
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @EstNomPropre('Le nom')
   nom: string;
 
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @EstNomPropre('Le prénom')
   prenom: string;
 
   @IsString()
   @IsNotEmpty()
-  @MaxLength(30)
+  @EstTelephone()
   telephone: string;
 
   @IsOptional()
   @IsEmail()
   email?: string;
 
-  @IsString()
-  @IsNotEmpty()
+  @IsIn(['pere', 'mere', 'tuteur'], { message: 'Le lien doit être : père, mère ou tuteur.' })
   lienParente: string; // "pere" | "mere" | "tuteur"
 }

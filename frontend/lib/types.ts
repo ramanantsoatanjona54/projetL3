@@ -1,5 +1,5 @@
 // Reflète l'enum RoleUtilisateur du backend (prisma/schema.prisma)
-export type Role = 'ADMIN' | 'ENSEIGNANT' | 'SECRETARIAT' | 'COMPTABLE' | 'DIRECTRICE' | 'PARENT';
+export type Role = 'ADMIN' | 'ENSEIGNANT' | 'SECRETARIAT' | 'COMPTABLE' | 'DIRECTRICE' | 'PARENT' | 'EDUCATEUR';
 
 export interface Utilisateur {
   id: number;
@@ -120,7 +120,7 @@ export interface LigneRetard {
   moisEnRetard: number[]; montantDu: number; penalites: number; joursRetardMax: number;
 }
 
-export interface Classe { id: number; nom: string; ordre: number }
+export interface Classe { id: number; nom: string; ordre: number; cycle: string }
 
 export interface Frais {
   id: number;
@@ -149,6 +149,9 @@ export interface PersonnelLigne {
   lieuAffectation: string | null; autorisationEnseigner: boolean; banque: string | null;
   dateEmbauche: string; dateDepart: string | null; dateRetraite: string | null;
   utilisateur: { id: number; email: string; role: string; actif: boolean } | null;
+  numeroStatistique?: string | null;
+  typePersonnel?: 'SALARIE' | 'CONSULTANT';
+  nif?: string | null;
 }
 
 export interface PresenceAgent {

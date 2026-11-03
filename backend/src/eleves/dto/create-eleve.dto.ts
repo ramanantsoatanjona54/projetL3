@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsIn,
@@ -7,18 +8,18 @@ import {
   IsOptional,
   IsString,
   MaxLength,
-  IsBoolean
 } from 'class-validator';
+import { EstNomPropre, EstTelephone } from '../../common/validation';
 
 export class CreateEleveDto {
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @EstNomPropre('Le nom')
   nom: string;
 
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @EstNomPropre('Le prénom')
   prenom: string;
 
   @IsIn(['M', 'F'])
@@ -33,7 +34,7 @@ export class CreateEleveDto {
   numeroInscription?: string;
 
   @IsOptional()
-  @IsDateString({}, { message: 'dateNaissance doit être une date valide (AAAA-MM-JJ)' })
+  @IsDateString({}, { message: "dateInscription doit être une date valide (AAAA-MM-JJ)" })
   dateInscription?: string;
 
   @IsOptional()
@@ -42,7 +43,7 @@ export class CreateEleveDto {
 
   @IsOptional()
   @IsString()
-  @IsString() @MaxLength(500)
+  @MaxLength(500)
   dossiersManquants?: string;
 
   @IsOptional()
@@ -54,9 +55,9 @@ export class CreateEleveDto {
   @IsDateString()
   assuranceExpiration?: string;
 
+  // Contact de la famille : 10 chiffres (à la modification, doit être celui d'un responsable)
   @IsOptional()
-  @IsString()
-  @MaxLength(30)
+  @EstTelephone()
   telephone?: string;
 
   @IsOptional()
@@ -74,16 +75,15 @@ export class CreateEleveDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @EstNomPropre('La profession du père')
   professionPere?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @EstNomPropre('La profession de la mère')
   professionMere?: string;
 
-    @IsOptional()
-    @IsBoolean()
-    confirmerHomonyme?: boolean; // vrai quand l'utilisateur confirme qu'il s'agit d'un autre élève
-
+  @IsOptional()
+  @IsBoolean()
+  confirmerHomonyme?: boolean; // vrai quand l'utilisateur confirme qu'il s'agit d'un autre élève
 }

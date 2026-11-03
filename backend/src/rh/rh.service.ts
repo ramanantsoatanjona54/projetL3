@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, RoleUtilisateur, TypeCertificat } from '@prisma/client';
+import { Prisma, RoleUtilisateur, TypeCertificat, TypePersonnel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePersonnelDto } from './dto/create-personnel.dto';
 import { UpdatePersonnelDto } from './dto/update-personnel.dto';
@@ -13,7 +13,7 @@ const INCLUDE_PERSONNEL = {
 } satisfies Prisma.PersonnelInclude;
 
 const normaliser = (s: string) =>
-  s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 // undefined = non fourni ; null ou vide = effacer ; sinon texte nettoyé
 const texte = (v?: string | null) => {
@@ -28,6 +28,15 @@ const cinNormalise = (v?: string | null) => {
 };
 const enDate = (v?: string | null) => (v === undefined ? undefined : v === null || v === '' ? null : new Date(v));
 const valeur = (v: unknown) => (v === undefined || v === null ? null : v instanceof Date ? v.getTime() : String(v));
+
+// Message clair selon la colonne unique en conflit (CIN, NIF, numéro statistique)
+function conflitUnique(e: Prisma.PrismaClientKnownRequestError): ConflictException | null {
+  const cible = JSON.stringify(e.meta?.target ?? '');
+  if (cible.includes('nif')) return new ConflictException('Ce NIF est déjà enregistré pour un autre agent.');
+  if (cible.includes('numeroStatistique')) return new ConflictException('Ce numéro statistique est déjà enregistré pour un autre agent.');
+  if (cible.includes('cin')) return new ConflictException('Ce CIN est déjà enregistré.');
+  return null;
+}
 
 @Injectable()
 export class RhService {
@@ -63,6 +72,9 @@ export class RhService {
       telephone: texte(dto.telephone),
       indemniteTransportJour: dto.indemniteTransportJour,
       numeroCnaps: texte(dto.numeroCnaps),
+      typePersonnel: dto.typePersonnel as TypePersonnel | undefined,
+      nif: texte(dto.nif),
+      numeroStatistique: texte(dto.numeroStatistique),
       poste: dto.poste ?? undefined,
       salleAffecteeId: dto.salleAffecteeId,
       lieuAffectation: texte(dto.lieuAffectation),
@@ -72,6 +84,26 @@ export class RhService {
       dateDepart: enDate(dto.dateDepart),
       dateRetraite: enDate(dto.dateRetraite),
     };
+  }
+
+  // Cohérence salarié / consultant :
+  //  - un consultant doit avoir un NIF et n'a pas de numéro CNaPS ;
+  //  - un salarié n'a ni NIF ni numéro statistique.
+  // Corrige d en place (efface ce qui ne concerne pas le type).
+  private verifierType(
+    d: { typePersonnel?: TypePersonnel; nif?: string | null; numeroStatistique?: string | null; numeroCnaps?: string | null },
+    typeActuel: TypePersonnel = TypePersonnel.SALARIE,
+    nifActuel: string | null = null,
+  ) {
+    const type = d.typePersonnel ?? typeActuel;
+    if (type === TypePersonnel.CONSULTANT) {
+      const nif = d.nif === undefined ? nifActuel : d.nif;
+      if (!nif) throw new BadRequestException('Le NIF est obligatoire pour un consultant.');
+      d.numeroCnaps = null;
+    } else {
+      d.nif = null;
+      d.numeroStatistique = null;
+    }
   }
 
   // Règles de cohérence communes à la création et à la modification
@@ -138,6 +170,7 @@ export class RhService {
     const nom = d.nom as string;
     const prenom = d.prenom as string;
     const dateEmbauche = d.dateEmbauche as Date;
+    this.verifierType(d);
 
     await this.verifier({
       nom, prenom, dateNaissance: d.dateNaissance ?? null, cin: d.cin ?? null,
@@ -156,16 +189,16 @@ export class RhService {
           await tx.journalAudit.create({
             data: {
               utilisateurId: adminId, action: 'PERSONNEL_CREE', entite: 'Personnel', entiteId: p.id,
-              details: { matricule: p.matricule, poste: p.poste },
+              details: { matricule: p.matricule, poste: p.poste, type: p.typePersonnel },
             },
           });
           return p;
         });
       } catch (e) {
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-          const cible = JSON.stringify(e.meta?.target ?? '');
-          if (cible.includes('cin')) throw new ConflictException('Ce CIN est déjà enregistré.');
-          if (cible.includes('matricule')) continue;
+          const conflit = conflitUnique(e);
+          if (conflit) throw conflit;
+          if (JSON.stringify(e.meta?.target ?? '').includes('matricule')) continue;
         }
         throw e;
       }
@@ -176,6 +209,7 @@ export class RhService {
   async modifierPersonnel(id: number, dto: UpdatePersonnelDto, adminId?: number) {
     const actuel = await this.obtenirPersonnel(id);
     const d = this.construireDonnees(dto);
+    this.verifierType(d, actuel.typePersonnel, actuel.nif);
 
     await this.verifier(
       {
@@ -190,7 +224,7 @@ export class RhService {
       id,
     );
 
-    // Seuls les NOMS des champs réellement modifiés sont journalisés (pas de CIN, banque, CNAPS...)
+    // Seuls les NOMS des champs réellement modifiés sont journalisés (pas de CIN, banque, CNAPS, NIF...)
     const champsModifies = (Object.keys(d) as (keyof typeof d)[]).filter(
       (k) => d[k] !== undefined && valeur(d[k]) !== valeur(actuel[k]),
     );
@@ -209,7 +243,7 @@ export class RhService {
       });
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        throw new ConflictException('Ce CIN est déjà enregistré.');
+        throw conflitUnique(e) ?? new ConflictException('Une de ces valeurs est déjà enregistrée pour un autre agent.');
       }
       throw e;
     }
@@ -261,8 +295,6 @@ export class RhService {
 
     return { ...(await this.obtenirPersonnel(id)), compteDesactive: desactiver };
   }
-
-  
 
   // --- Certificats / contrats ---
 

@@ -6,6 +6,7 @@ import { api, ApiError } from '@/lib/api';
 import { normaliser } from '@/lib/normaliser';
 import { traduireErreursServeur } from '@/lib/erreurs';
 import type { Eleve } from '@/lib/types';
+import { erreurNom, erreurTelephone, saisieNom, saisieTelephone } from '@/lib/validation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,21 +23,31 @@ export const VIDE = {
 export type Champs = typeof VIDE;
 type Mode = 'creation' | 'modification';
 
+/** Un responsable (père, mère, tuteur) dont le numéro peut être le contact de la famille */
+export interface ContactResponsable { libelle: string; telephone: string }
+
 const OBLIGATOIRES = ['nom', 'prenom', 'sexe', 'dateNaissance'];
 const LIBELLES: Record<string, string> = {
   nom: 'Le nom', prenom: 'Le prénom', sexe: 'Le sexe', dateNaissance: 'La date de naissance',
   numeroInscription: "Le numéro d'inscription", dateInscription: "La date d'admission",
   taille: 'La taille', assurance: "L'assurance", assuranceExpiration: "La fin de l'assurance",
-  dossiersManquants: 'Les pièces manquantes', telephone: 'Le téléphone', email1: "L'email principal",
+  dossiersManquants: 'Les pièces manquantes', telephone: 'Le contact de la famille', email1: "L'email principal",
   email2: "L'email secondaire", quartier: 'Le quartier', professionPere: 'La profession du père',
   professionMere: 'La profession de la mère',
 };
 const EMAIL = /^\S+@\S+\.\S+$/;
+const chiffres = (s?: string | null) => (s ?? '').replace(/\D/g, '');
+const AUCUN = '__aucun__';
+const ANCIEN = '__ancien__';
 
-function valider(f: Champs): Record<string, string> {
+interface Contexte { mode: Mode; contacts: ContactResponsable[]; telephoneInitial: string }
+
+function valider(f: Champs, ctx: Contexte): Record<string, string> {
   const e: Record<string, string> = {};
-  if (!f.nom.trim()) e.nom = 'Le nom est obligatoire.';
-  if (!f.prenom.trim()) e.prenom = 'Le prénom est obligatoire.';
+  const n = erreurNom(f.nom, 'Le nom'); if (n) e.nom = n;
+  const p = erreurNom(f.prenom, 'Le prénom'); if (p) e.prenom = p;
+  const pp = erreurNom(f.professionPere, 'La profession du père', false); if (pp) e.professionPere = pp;
+  const pm = erreurNom(f.professionMere, 'La profession de la mère', false); if (pm) e.professionMere = pm;
   if (!f.sexe) e.sexe = 'Choisissez le sexe.';
   if (!f.dateNaissance) {
     e.dateNaissance = 'La date de naissance est obligatoire.';
@@ -50,6 +61,20 @@ function valider(f: Champs): Record<string, string> {
   }
   if (f.email1 && !EMAIL.test(f.email1)) e.email1 = 'Adresse email invalide.';
   if (f.email2 && !EMAIL.test(f.email2)) e.email2 = 'Adresse email invalide.';
+
+  // Contact de la famille : 10 chiffres (sauf ancien numéro inchangé)
+  if (f.telephone.trim() && chiffres(f.telephone) !== chiffres(ctx.telephoneInitial)) {
+    const t = erreurTelephone(f.telephone);
+    if (t) e.telephone = t;
+  }
+  // Contact de la famille : à la modification, un nouveau numéro doit être celui d'un responsable
+  if (
+    ctx.mode === 'modification' && ctx.contacts.length > 0 && f.telephone.trim() &&
+    chiffres(f.telephone) !== chiffres(ctx.telephoneInitial) &&
+    !ctx.contacts.some((c) => chiffres(c.telephone) === chiffres(f.telephone))
+  ) {
+    e.telephone = 'Choisissez le numéro du père, de la mère ou du tuteur.';
+  }
   return e;
 }
 
@@ -82,10 +107,12 @@ interface Props {
   eleveId?: number;
   matricule?: string;
   initial?: Partial<Champs>;
+  /** Modification : numéros du père, de la mère et du tuteur (le contact de la famille en fait partie) */
+  contacts?: ContactResponsable[];
   onSuccess: () => void;
 }
 
-export function FormulaireEleve({ mode, eleveId, matricule, initial, onSuccess }: Props) {
+export function FormulaireEleve({ mode, eleveId, matricule, initial, contacts = [], onSuccess }: Props) {
   const [f, setF] = useState<Champs>({ ...VIDE, ...initial });
   const [existants, setExistants] = useState<Eleve[]>([]);
   const [confirmeHomonyme, setConfirmeHomonyme] = useState(false);
@@ -95,6 +122,7 @@ export function FormulaireEleve({ mode, eleveId, matricule, initial, onSuccess }
   const [enCours, setEnCours] = useState(false);
   const haut = useRef<HTMLDivElement>(null);
   const aujourdhui = new Date().toISOString().slice(0, 10);
+  const telephoneInitial = initial?.telephone ?? '';
 
   useEffect(() => {
     api.get<Eleve[] | { data: Eleve[] }>('/eleves')
@@ -127,12 +155,16 @@ export function FormulaireEleve({ mode, eleveId, matricule, initial, onSuccess }
   const bloque = (!!doublon || !!conflitServeur) && !confirmeHomonyme;
   const focaliser = (id: string) => requestAnimationFrame(() => document.getElementById(id)?.focus());
 
+  // Valeur affichée dans la liste du contact de la famille
+  const contactChoisi = contacts.find((c) => chiffres(c.telephone) === chiffres(f.telephone))?.telephone;
+  const valeurContact = contactChoisi ?? (f.telephone.trim() ? ANCIEN : AUCUN);
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (enCours) return;
     setErreurGenerale(null);
 
-    const locales = valider(f);
+    const locales = valider(f, { mode, contacts, telephoneInitial });
     setErreurs(locales);
     const premiere = Object.keys(locales)[0];
     if (premiere) { focaliser(premiere); return; }
@@ -158,6 +190,12 @@ export function FormulaireEleve({ mode, eleveId, matricule, initial, onSuccess }
       } else if (err.status === 409 && err.message.includes("numéro d'inscription")) {
         setErreurs({ numeroInscription: err.message });
         focaliser('numeroInscription');
+      } else if (err.status === 400 && err.message.includes('contact de la famille')) {
+        setErreurs({ telephone: err.message });
+        focaliser('telephone');
+      } else if (err.status === 400 && err.message.includes('Ajoutez d\'abord le père')) {
+        setErreurs({ telephone: err.message });
+        focaliser('telephone');
       } else if (err.status === 401 || err.status === 403) {
         setErreurGenerale("Votre session a expiré ou vous n'avez pas le droit de faire cette action. Reconnectez-vous.");
       } else {
@@ -171,10 +209,15 @@ export function FormulaireEleve({ mode, eleveId, matricule, initial, onSuccess }
     }
   }
 
+  // Filtre appliqué à la frappe : lettres pour les noms et professions, chiffres pour le téléphone
+  const filtre = (id: keyof Champs, v: string) =>
+    ['nom', 'prenom', 'professionPere', 'professionMere'].includes(id) ? saisieNom(v)
+    : id === 'telephone' ? saisieTelephone(v) : v;
+
   const props = (id: keyof Champs) => ({
     id,
     value: f[id],
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(id, e.target.value),
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(id, filtre(id, e.target.value)),
     className: 'h-11 text-base',
     'aria-invalid': !!erreurs[id],
     'aria-describedby': erreurs[id] ? `${id}-erreur` : undefined,
@@ -275,7 +318,51 @@ export function FormulaireEleve({ mode, eleveId, matricule, initial, onSuccess }
         <Card>
           <CardHeader><CardTitle>Contact et famille</CardTitle></CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
-            <Champ id="telephone" label="Téléphone" erreur={erreurs.telephone}><Input {...props('telephone')} type="tel" autoComplete="tel" /></Champ>
+            {mode === 'modification' ? (
+              <Champ id="telephone" label="Contact de la famille" erreur={erreurs.telephone}>
+                {contacts.length === 0 ? (
+                  <>
+                    <Input {...props('telephone')} disabled />
+                    <p className="text-sm text-muted-foreground">
+                      Ajoutez d&apos;abord un père, une mère ou un tuteur depuis la fiche de l&apos;élève : le contact de la
+                      famille doit être l&apos;un de leurs numéros.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Select
+                      value={valeurContact}
+                      onValueChange={(v) => set('telephone', v === AUCUN ? '' : v === ANCIEN ? f.telephone : v)}
+                    >
+                      <SelectTrigger
+                        id="telephone" className="h-11 w-full text-base"
+                        aria-invalid={!!erreurs.telephone}
+                        aria-describedby={erreurs.telephone ? 'telephone-erreur' : undefined}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {contacts.map((c) => (
+                          <SelectItem key={c.telephone} value={c.telephone}>{c.libelle} · {c.telephone}</SelectItem>
+                        ))}
+                        {valeurContact === ANCIEN && (
+                          <SelectItem value={ANCIEN}>Actuel : {f.telephone} (ne correspond à aucun responsable)</SelectItem>
+                        )}
+                        <SelectItem value={AUCUN}>Aucun</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-sm text-muted-foreground">Le numéro d&apos;un des responsables de l&apos;élève.</p>
+                  </>
+                )}
+              </Champ>
+            ) : (
+              <Champ id="telephone" label="Contact de la famille" erreur={erreurs.telephone}>
+                <Input {...props('telephone')} type="tel" inputMode="numeric" maxLength={14} autoComplete="tel" />
+                <p className="text-sm text-muted-foreground">
+                  Facultatif, 10 chiffres. S&apos;il est vide, il sera repris du premier parent ou tuteur ajouté.
+                </p>
+              </Champ>
+            )}
             <Champ id="quartier" label="Quartier" erreur={erreurs.quartier}><Input {...props('quartier')} /></Champ>
             <Champ id="email1" label="Email principal" erreur={erreurs.email1}><Input {...props('email1')} type="email" /></Champ>
             <Champ id="email2" label="Email secondaire" erreur={erreurs.email2}><Input {...props('email2')} type="email" /></Champ>

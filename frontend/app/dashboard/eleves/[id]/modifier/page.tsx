@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import type { Eleve } from '@/lib/types';
-import { FormulaireEleve, type Champs } from '@/components/eleves/FormulaireEleve';
+import { FormulaireEleve, type Champs, type ContactResponsable } from '@/components/eleves/FormulaireEleve';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 
 const t = (x?: string | number | null) => (x == null ? '' : String(x));
 const jour = (x?: string | null) => (x ? x.slice(0, 10) : '');
+const LIENS: Record<string, string> = { pere: 'Père', mere: 'Mère', tuteur: 'Tuteur' };
 
 function versChamps(e: Eleve): Champs {
   return {
@@ -21,6 +22,14 @@ function versChamps(e: Eleve): Champs {
     email2: t(e.email2), quartier: t(e.quartier), professionPere: t(e.professionPere),
     professionMere: t(e.professionMere),
   };
+}
+
+// Numéros des responsables : le contact de la famille doit être l'un d'eux
+function versContacts(e: Eleve): ContactResponsable[] {
+  return (e.parents ?? []).map((pe) => ({
+    libelle: `${LIENS[pe.lienParente] ?? pe.lienParente} · ${pe.parent.prenom} ${pe.parent.nom}`,
+    telephone: pe.parent.telephone,
+  }));
 }
 
 export default function ModifierEleve() {
@@ -51,6 +60,7 @@ export default function ModifierEleve() {
       eleveId={eleve.id}
       matricule={eleve.matricule}
       initial={versChamps(eleve)}
+      contacts={versContacts(eleve)}
       onSuccess={() => router.push(`/dashboard/eleves/${eleve.id}`)}
     />
   );

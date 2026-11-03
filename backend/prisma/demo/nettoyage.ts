@@ -23,8 +23,7 @@ export async function nettoyer(prisma: PrismaClient): Promise<void> {
       await tx.noteExamen.deleteMany();
       await tx.examenBlancDiscipline.deleteMany();
       await tx.examenBlanc.deleteMany();
-      await tx.noteCompetence.deleteMany();
-      await tx.noteLecon.deleteMany();
+      await tx.evaluationBulletin.deleteMany();
       await tx.progressionDomaine.deleteMany();
       await tx.progressionLecon.deleteMany();
       await tx.bulletin.deleteMany();

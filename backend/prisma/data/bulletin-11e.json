@@ -1,0 +1,296 @@
+{
+ "1": [
+  {
+   "titre": "Attitudes scolaires",
+   "rubriques": [
+    {
+     "titre": "Autonomie",
+     "lignes": [
+      "formule une demande d'aide et tient compte des conseils",
+      "est capable d'évaluer son travail avec l'aide de l'enseignant",
+      "est capable de distinguer le réel de l'imaginaire"
+     ]
+    },
+    {
+     "titre": "Mémoire, méthodes de travail",
+     "lignes": [
+      "comprend, applique et respecte les différentes consignes",
+      "reste concentré et soutient un effort jusqu'au terme de l'activité",
+      "mémorise les textes et les chansons travaillés en classe"
+     ]
+    },
+    {
+     "titre": "Langage et communication",
+     "lignes": [
+      "participe activement aux différentes activités proposées en classe",
+      "s'exprime de manière argumentée et claire"
+     ]
+    },
+    {
+     "titre": "Vivre ensemble",
+     "lignes": [
+      "connaît et respecte les règles de vie en collectivité",
+      "aide volontiers les enfants plus jeunes ou en difficulté"
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "Français",
+   "rubriques": [
+    {
+     "titre": "Expression orale",
+     "lignes": [
+      "sait varier son vocabulaire",
+      "sait raconter à la classe une histoire vécue ou entendue"
+     ]
+    },
+    {
+     "titre": "Lecture",
+     "lignes": [
+      "comprend les correspondances entre un mot et une syllabe à l'oral et à l'écrit",
+      "segmente un mot en syllabes et en lettres",
+      "reconnaît et lit quelques mots outils (le, la, un, une, et, de, des,…)",
+      "comprend les diverses fonctions de l'écrit"
+     ]
+    },
+    {
+     "titre": "Ecriture",
+     "lignes": [
+      "tient correctement son crayon, son stylo",
+      "écrit entre deux lignes soigneusement",
+      "écrit lisiblement en écriture cursive les lettres minuscules et majuscules",
+      "copie lisiblement des mots et des phrases courtes en écriture cursive"
+     ]
+    },
+    {
+     "titre": "Orthographe",
+     "lignes": [
+      "copie sans erreur un texte court mot par mot"
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "Eveil",
+   "rubriques": [
+    {
+     "titre": "Structuration dans l'espace",
+     "lignes": [
+      "maîtrise le vocabulaire spécifique de l'espace (dessus, dessous, devant, derrière,…)",
+      "dessine la position d'objets selon les consignes (gauche, droite, entre, près de,…)"
+     ]
+    },
+    {
+     "titre": "Structuration dans le temps",
+     "lignes": [
+      "maîtrise le vocabulaire spécifique du temps (hier, aujourd'hui, demain,…)",
+      "distingue le temps (passé, présent, futur)"
+     ]
+    },
+    {
+     "titre": "Le vivant",
+     "lignes": [
+      "distingue le vivant et le non vivant",
+      "connaît et applique quelques règles d'hygiène"
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "Malgache",
+   "rubriques": [
+    {
+     "titre": null,
+     "lignes": [
+      "lit une lettre, une syllabe et un mot.",
+      "écrit une lettre, une syllabe et un mot."
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "Calcul",
+   "rubriques": [
+    {
+     "titre": "Arithmétique",
+     "lignes": [
+      "désigne oralement des nombres entiers naturels (inférieur à 20)",
+      "dénombre des objets en effectuant des regroupements (par dizaines, par unités)",
+      "compte oralement (de 0 à 20)",
+      "compare, range, encadre des nombres entiers naturels"
+     ]
+    },
+    {
+     "titre": "Calcul",
+     "lignes": [
+      "connaît et utilise la table d'addition",
+      "calcule des sommes en lignes",
+      "commence à calculer mentalement"
+     ]
+    },
+    {
+     "titre": "Géométrie",
+     "lignes": [
+      "sait se repérer dans l'espace (droite, gauche, haut, bas, en avant, en arrière, en face, entre)",
+      "sait se repérer sur une ligne (entre, avant, après)"
+     ]
+    }
+   ]
+  }
+ ],
+ "2": [
+  {
+   "titre": "Attitudes scolaires",
+   "rubriques": [
+    {
+     "titre": "Autonomie",
+     "lignes": [
+      "formule une demande d'aide et tient compte des conseils",
+      "est capable d'évaluer son travail avec l'aide de l'enseignant",
+      "est capable de distinguer le réel de l'imaginaire"
+     ]
+    },
+    {
+     "titre": "Mémoire, méthodes de travail",
+     "lignes": [
+      "comprend, applique et respecte les différentes consignes",
+      "reste concentré et soutient un effort jusqu'au terme de l'activité",
+      "mémorise les textes et les chansons travaillés en classe"
+     ]
+    },
+    {
+     "titre": "Langage et communication",
+     "lignes": [
+      "participe activement aux différentes activités proposées en classe",
+      "s'exprime de manière argumentée et claire"
+     ]
+    },
+    {
+     "titre": "Vivre ensemble",
+     "lignes": [
+      "connaît et respecte les règles de vie en collectivité",
+      "aide volontiers les enfants plus jeunes ou en difficulté"
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "Français",
+   "rubriques": [
+    {
+     "titre": "Expression orale",
+     "lignes": [
+      "sait varier son vocabulaire",
+      "sait raconter à la classe une histoire vécue ou entendue",
+      "sait reformuler une consigne"
+     ]
+    },
+    {
+     "titre": "Lecture",
+     "lignes": [
+      "lit un mot, une phrase contenant différentes syllabes",
+      "decode aisément des mots inconnues réguliers",
+      "comprend les diverses fonctions de l'écrit"
+     ]
+    },
+    {
+     "titre": "Ecriture",
+     "lignes": [
+      "tient correctement son crayon, son stylo",
+      "écrit entre deux lignes soigneusement",
+      "écrit lisiblement en écriture cursive les lettres minuscules et majuscules",
+      "copie lisiblement des mots et des phrases courtes en écriture cursive"
+     ]
+    },
+    {
+     "titre": "Orthographe",
+     "lignes": [
+      "copie sans erreur un texte court mot par mot",
+      "orthographie correctement des mots, des phrases."
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "Eveil",
+   "rubriques": [
+    {
+     "titre": "Structuration dans l'espace",
+     "lignes": [
+      "maîtrise le vocabulaire spécifique de l'espace (dessus, dessous, devant, derrière,…)",
+      "dessine la position d'objets selon les consignes (gauche, droite, entre, près de,…)"
+     ]
+    },
+    {
+     "titre": "Structuration dans le temps",
+     "lignes": [
+      "maîtrise le vocabulaire spécifique du temps (hier, aujourd'hui, demain,…)",
+      "distingue le temps (passé, présent, futur)"
+     ]
+    },
+    {
+     "titre": "Le vivant",
+     "lignes": [
+      "distingue le vivant et le non vivant",
+      "connaît et applique quelques règles d'hygiène"
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "Malgache",
+   "rubriques": [
+    {
+     "titre": null,
+     "lignes": [
+      "lit une lettre, une syllabe, un mot et une phrase.",
+      "écrit une lettre, une syllabe, un mot et une phrase.",
+      "orthographie sans erreur des mots."
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "Calcul",
+   "rubriques": [
+    {
+     "titre": "Numération",
+     "lignes": [
+      "désigne oralement des nombres entiers naturels de 0 à 100",
+      "dénombre des objets en effectuant des regroupements (par dizaines, par unités)",
+      "compte oralement (de 0 à 100)",
+      "compare, range, encadre des nombres entiers naturels"
+     ]
+    },
+    {
+     "titre": "Opération",
+     "lignes": [
+      "connaît et utilise l'addition et la soustraction",
+      "calcule des sommes, des différences en lignes et en colonnes",
+      "commence à calculer mentalement"
+     ]
+    },
+    {
+     "titre": "Géométrie",
+     "lignes": [
+      "connaît et utilise le vocabulaire lié à la latéralisation (droite, gauche, haut, bas, en avant, en arrière)"
+     ]
+    },
+    {
+     "titre": "Mesure",
+     "lignes": [
+      "lit les informations apportées par un calendrier",
+      "reproduit dans l'ordre chronologique un événement"
+     ]
+    },
+    {
+     "titre": "Problème",
+     "lignes": [
+      "Apprend à résoudre des problèmes"
+     ]
+    }
+   ]
+  }
+ ]
+}

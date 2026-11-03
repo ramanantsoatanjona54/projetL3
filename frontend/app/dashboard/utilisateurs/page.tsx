@@ -22,7 +22,7 @@ type Modale = { type: 'creer' } | { type: 'modifier'; u: UtilisateurLigne } | { 
 interface Resultat { titre: string; email: string; motDePasse: string }
 
 const ROLES: Record<string, string> = {
-  ADMIN: 'Administrateur', DIRECTRICE: 'Directrice', SECRETARIAT: 'Secrétariat', COMPTABLE: 'Comptable', PARENT: 'Parent',
+    ADMIN: 'Administrateur', DIRECTRICE: 'Directrice', SECRETARIAT: 'Secrétariat', COMPTABLE: 'Comptable', PARENT: 'Parent', EDUCATEUR: 'Éducateur spécialisé',
 };
 const libRole = (r: string) => ROLES[r] ?? r.charAt(0) + r.slice(1).toLowerCase();
 const nomPersonnel = (p: PersonnelOption) => [p.prenom, p.nom].filter(Boolean).join(' ') || `Personnel #${p.id}`;

@@ -3,7 +3,7 @@ import { RoleUtilisateur } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { SaisirEvaluationsDto, SuiviDto } from './dto/evaluations.dto';
+import { SuiviDto } from './dto/evaluations.dto';
 import { EvaluationsService } from './evaluations.service';
 
 const { ADMIN, DIRECTRICE, ENSEIGNANT } = RoleUtilisateur;
@@ -34,18 +34,6 @@ export class EvaluationsController {
     @Query('ceintureId', ParseIntPipe) ceintureId: number,
     @Req() req: any,
   ) { return this.service.elements(this.acteur(req), salleId, niveauId, ceintureId); }
-
-  @Get('evaluations')
-  eleves(
-    @Query('salleId', ParseIntPipe) salleId: number,
-    @Query('niveauId', ParseIntPipe) niveauId: number,
-    @Query('elementId', ParseIntPipe) elementId: number,
-    @Req() req: any,
-  ) { return this.service.eleves(this.acteur(req), salleId, niveauId, elementId); }
-
-  @Post('evaluations')
-  @Roles(ENSEIGNANT)
-  enregistrer(@Body() dto: SaisirEvaluationsDto, @Req() req: any) { return this.service.enregistrer(this.acteur(req), dto); }
 
   @Post('suivi')
   @Roles(ENSEIGNANT)

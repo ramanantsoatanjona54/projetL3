@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards,
+  Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards,BadRequestException
 } from '@nestjs/common';
 import { InscriptionsService } from './inscriptions.service';
 import { CreateInscriptionDto } from './dto/create-inscription.dto';
@@ -7,6 +7,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RoleUtilisateur } from '@prisma/client';
+import { OuvrirSallesDto, ReinscrireDto } from './dto/reinscrire.dto';
 
 
 @Controller('inscriptions')
@@ -18,6 +19,25 @@ export class InscriptionsController {
   @Roles(RoleUtilisateur.SECRETARIAT, RoleUtilisateur.DIRECTRICE)
   listerEnAttente() {
     return this.inscriptionsService.listerEnAttente();
+  }
+    @Get('reinscription')
+  @Roles(RoleUtilisateur.SECRETARIAT, RoleUtilisateur.ADMIN)
+  preparerReinscription(@Query('anneeCibleId') brut?: string) {
+    const id = brut ? Number.parseInt(brut, 10) : undefined;
+    if (brut && !Number.isInteger(id)) throw new BadRequestException('Année invalide.');
+    return this.inscriptionsService.preparerReinscription(id);
+  }
+
+  @Post('reinscription/ouvrir-salles')
+  @Roles(RoleUtilisateur.SECRETARIAT, RoleUtilisateur.ADMIN)
+  ouvrirSalles(@Body() dto: OuvrirSallesDto, @Req() req: any) {
+    return this.inscriptionsService.ouvrirSalles(dto.anneeScolaireId, req.user?.id);
+  }
+
+  @Post('reinscription')
+  @Roles(RoleUtilisateur.SECRETARIAT, RoleUtilisateur.ADMIN)
+  reinscrire(@Body() dto: ReinscrireDto, @Req() req: any) {
+    return this.inscriptionsService.reinscrire(dto.anneeScolaireId, dto.lignes, req.user?.id);
   }
 
   // Aperçu (rang de fratrie) affiché avant de créer l'inscription

@@ -32,13 +32,16 @@ async function proxy(req: NextRequest, { params }: { params: Promise<{ path: str
     return NextResponse.json({ message: 'Service momentanément indisponible' }, { status: 502 });
   }
 
-  const reponse = new NextResponse(await res.text(), {
-    status: res.status,
-    headers: {
-      'Content-Type': res.headers.get('Content-Type') ?? 'application/json',
-      'Cache-Control': 'no-store',
-    },
-  });
+  // Octets bruts : indispensable pour les fichiers (Word, PDF...), sans effet sur le JSON
+  const octets = await res.arrayBuffer();
+  const entetes: Record<string, string> = {
+    'Content-Type': res.headers.get('Content-Type') ?? 'application/json',
+    'Cache-Control': 'no-store',
+  };
+  const disposition = res.headers.get('Content-Disposition');
+  if (disposition) entetes['Content-Disposition'] = disposition;
+
+  const reponse = new NextResponse(octets, { status: res.status, headers: entetes });
   if (res.status === 401 && token) reponse.cookies.delete('session'); // session expirée : le cookie ne sert plus
   return reponse;
 }

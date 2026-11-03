@@ -8,6 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 import { messageErreur } from '@/lib/messages';
 import { normaliser } from '@/lib/normaliser';
 import { cinNormalise, jourIso, libelleSalle, nomComplet } from '@/lib/personnel';
+import { erreurNom, erreurNumero, erreurTelephone, saisieChiffres, saisieNom, saisieTelephone } from '@/lib/validation';
 import type { PersonnelLigne, Salle } from '@/lib/types';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -18,13 +19,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 const AUCUN = 'aucun';
 
+// Longueurs maximales des numéros (chiffres uniquement) — à ajuster ici si besoin
+const LONGUEUR = { cin: 12, nif: 10, numeroStatistique: 17, numeroCnaps: 12 } as const;
+
 interface Valeurs {
   nom: string; prenom: string; sexe: string; dateNaissance: string; cin: string; telephone: string;
   adresse: string; poste: string; salle: string; lieuAffectation: string; autorisationEnseigner: boolean;
   dateEmbauche: string; dateRetraite: string; dateDepart: string; numeroCnaps: string; banque: string;
-  indemnite: string;
+  indemnite: string; typePersonnel: string; nif: string; numeroStatistique: string;
 }
-type CleTexte = Exclude<keyof Valeurs, 'autorisationEnseigner'>;
+type CleTexte = Exclude<keyof Valeurs, 'autorisationEnseigner' | 'typePersonnel'>;
 
 function depuis(p?: PersonnelLigne): Valeurs {
   return {
@@ -36,6 +40,7 @@ function depuis(p?: PersonnelLigne): Valeurs {
     dateEmbauche: jourIso(p?.dateEmbauche), dateRetraite: jourIso(p?.dateRetraite),
     dateDepart: jourIso(p?.dateDepart), numeroCnaps: p?.numeroCnaps ?? '', banque: p?.banque ?? '',
     indemnite: p?.indemniteTransportJour != null ? String(Number(p.indemniteTransportJour)) : '',
+    typePersonnel: p?.typePersonnel ?? 'SALARIE', nif: p?.nif ?? '', numeroStatistique: p?.numeroStatistique ?? '',
   };
 }
 
@@ -69,6 +74,8 @@ export function FormulairePersonnel({ personnel }: { personnel?: PersonnelLigne 
   const [erreurGenerale, setErreurGenerale] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
 
+  const consultant = v.typePersonnel === 'CONSULTANT';
+
   useEffect(() => {
     Promise.all([
       api.get<string[]>('/rh/postes'),
@@ -92,6 +99,10 @@ export function FormulairePersonnel({ personnel }: { personnel?: PersonnelLigne 
   const alertes = useMemo(() => {
     const cin = v.cin.trim() ? cinNormalise(v.cin) : '';
     const doublonCin = cin ? autres.find((a) => a.cin && cinNormalise(a.cin) === cin) : undefined;
+    const nif = v.nif.replace(/\s/g, '');
+    const doublonNif = consultant && nif ? autres.find((a) => a.nif && a.nif.replace(/\s/g, '') === nif) : undefined;
+    const stat = v.numeroStatistique.replace(/\s/g, '');
+    const doublonStat = consultant && stat ? autres.find((a) => a.numeroStatistique && a.numeroStatistique.replace(/\s/g, '') === stat) : undefined;
     let memePersonne: PersonnelLigne | undefined;
     let homonyme: PersonnelLigne | undefined;
     if (v.nom.trim() && v.prenom.trim()) {
@@ -100,20 +111,29 @@ export function FormulairePersonnel({ personnel }: { personnel?: PersonnelLigne 
       memePersonne = v.dateNaissance ? memes.find((a) => jourIso(a.dateNaissance) === v.dateNaissance) : undefined;
       homonyme = memePersonne ? undefined : memes[0];
     }
-    return { doublonCin, memePersonne, homonyme };
-  }, [v.cin, v.nom, v.prenom, v.dateNaissance, autres]);
+    return { doublonCin, doublonNif, doublonStat, memePersonne, homonyme };
+  }, [v.cin, v.nom, v.prenom, v.dateNaissance, v.nif, v.numeroStatistique, consultant, autres]);
 
   function valider() {
     const e: Record<string, string> = {};
-    if (!v.nom.trim()) e.nom = 'Le nom est obligatoire.';
-    if (!v.prenom.trim()) e.prenom = 'Le prénom est obligatoire.';
+    const en = erreurNom(v.nom, 'Le nom'); if (en) e.nom = en;
+    const ep = erreurNom(v.prenom, consultant ? 'Les prénoms' : 'Le prénom'); if (ep) e.prenom = ep;
+    const eb = erreurNom(v.banque, 'La banque', false); if (eb) e.banque = eb;
     if (!v.poste) e.poste = 'Choisissez le poste.';
-    if (!v.dateEmbauche) e.dateEmbauche = "La date d'embauche est obligatoire.";
+    if (!v.dateEmbauche) e.dateEmbauche = consultant ? 'Le début de mission est obligatoire.' : "La date d'embauche est obligatoire.";
     if (v.dateNaissance && v.dateNaissance > aujourdhui) e.dateNaissance = 'La date de naissance ne peut pas être dans le futur.';
-    if (v.cin.trim() && !/^[A-Za-z0-9\s.\-]{6,30}$/.test(v.cin.trim())) e.cin = 'CIN invalide (6 à 30 caractères).';
-    if (v.telephone.trim() && !/^[0-9+\s().\-]{6,30}$/.test(v.telephone.trim())) e.telephone = 'Numéro de téléphone invalide.';
+    const ec = erreurNumero(v.cin, 'Le CIN', LONGUEUR.cin); if (ec) e.cin = ec;
+    const et = erreurTelephone(v.telephone); if (et) e.telephone = et;
+    if (!consultant) { const ecn = erreurNumero(v.numeroCnaps, 'Le numéro CNaPS', LONGUEUR.numeroCnaps); if (ecn) e.numeroCnaps = ecn; }
     if (v.indemnite.trim() && !(Number(v.indemnite.replace(',', '.')) >= 0)) e.indemnite = 'Saisissez un montant positif.';
     if (v.dateDepart && v.dateEmbauche && v.dateDepart < v.dateEmbauche) e.dateDepart = "Le départ ne peut pas précéder l'embauche.";
+    if (consultant) {
+      if (!v.nif.trim()) e.nif = 'Le NIF est obligatoire pour un consultant.';
+      else { const en2 = erreurNumero(v.nif, 'Le NIF', LONGUEUR.nif); if (en2) e.nif = en2; }
+      const es = erreurNumero(v.numeroStatistique, 'Le numéro statistique', LONGUEUR.numeroStatistique); if (es) e.numeroStatistique = es;
+      if (alertes.doublonNif) e.nif = `Ce NIF est déjà enregistré pour ${nomComplet(alertes.doublonNif)} (${alertes.doublonNif.matricule}).`;
+      if (alertes.doublonStat) e.numeroStatistique = `Ce numéro statistique est déjà enregistré pour ${nomComplet(alertes.doublonStat)} (${alertes.doublonStat.matricule}).`;
+    }
     if (alertes.doublonCin) e.cin = `Ce CIN est déjà enregistré pour ${nomComplet(alertes.doublonCin)} (${alertes.doublonCin.matricule}).`;
     if (alertes.memePersonne) e.nom = `Cette personne existe déjà (${alertes.memePersonne.matricule}).`;
     setErreurs(e);
@@ -130,7 +150,12 @@ export function FormulairePersonnel({ personnel }: { personnel?: PersonnelLigne 
     const corps: Record<string, unknown> = {
       nom: v.nom.trim(), prenom: v.prenom.trim(), sexe: v.sexe === AUCUN ? null : v.sexe,
       dateNaissance: vide(v.dateNaissance), cin: vide(v.cin), telephone: vide(v.telephone),
-      adresse: vide(v.adresse), lieuAffectation: vide(v.lieuAffectation), numeroCnaps: vide(v.numeroCnaps),
+      adresse: vide(v.adresse), lieuAffectation: vide(v.lieuAffectation),
+      typePersonnel: v.typePersonnel,
+      // Selon le type, on n'envoie que ce qui le concerne (le serveur efface le reste)
+      numeroCnaps: consultant ? null : vide(v.numeroCnaps),
+      nif: consultant ? vide(v.nif) : null,
+      numeroStatistique: consultant ? vide(v.numeroStatistique) : null,
       banque: vide(v.banque), dateRetraite: vide(v.dateRetraite), dateEmbauche: v.dateEmbauche,
       salleAffecteeId: v.salle === AUCUN ? null : Number(v.salle),
       autorisationEnseigner: v.autorisationEnseigner,
@@ -155,6 +180,16 @@ export function FormulairePersonnel({ personnel }: { personnel?: PersonnelLigne 
     }
   }
 
+  // Filtre appliqué à la frappe : lettres pour les noms, chiffres pour les téléphones et numéros
+  const filtrer = (cle: CleTexte, val: string) => {
+    if (cle === 'nom' || cle === 'prenom' || cle === 'banque') return saisieNom(val);
+    if (cle === 'telephone') return saisieTelephone(val);
+    if (cle === 'cin' || cle === 'nif' || cle === 'numeroStatistique' || cle === 'numeroCnaps') {
+      return saisieChiffres(val, LONGUEUR[cle]);
+    }
+    return val;
+  };
+
   const saisie = (
     cle: CleTexte, label: string,
     opts: { type?: string; requis?: boolean; aide?: string; avert?: string; inputMode?: 'numeric' | 'tel' | 'text'; max?: string } = {},
@@ -162,7 +197,7 @@ export function FormulairePersonnel({ personnel }: { personnel?: PersonnelLigne 
     <Champ id={cle} label={label} requis={opts.requis} erreur={erreurs[cle]} avert={opts.avert} aide={opts.aide}>
       <Input
         id={cle} type={opts.type ?? 'text'} inputMode={opts.inputMode} max={opts.max} autoComplete="off"
-        value={v[cle]} onChange={(e) => setTexte(cle, e.target.value)}
+        value={v[cle]} onChange={(e) => setTexte(cle, filtrer(cle, e.target.value))}
         aria-invalid={!!erreurs[cle]} aria-describedby={`${cle}-msg`} className="h-11 text-base"
       />
     </Champ>
@@ -179,8 +214,18 @@ export function FormulairePersonnel({ personnel }: { personnel?: PersonnelLigne 
       <Card>
         <CardHeader><CardTitle>Identité</CardTitle></CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
+          <Champ id="typePersonnel" label="Type de personnel" requis aide="Un consultant n'a pas de numéro CNaPS : il a un NIF et un numéro statistique.">
+            <Select value={v.typePersonnel} onValueChange={(x) => { setV((p) => ({ ...p, typePersonnel: x })); setErreurs({}); }}>
+              <SelectTrigger id="typePersonnel" className="h-11 w-full text-base"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="SALARIE">Salarié</SelectItem>
+                <SelectItem value="CONSULTANT">Consultant</SelectItem>
+              </SelectContent>
+            </Select>
+          </Champ>
+          <div className="hidden sm:block" aria-hidden="true" />
           {saisie('nom', 'Nom', { requis: true })}
-          {saisie('prenom', 'Prénom', {
+          {saisie('prenom', consultant ? 'Prénoms' : 'Prénom', {
             requis: true,
             avert: alertes.homonyme ? `${nomComplet(alertes.homonyme)} (${alertes.homonyme.matricule}) porte déjà ce nom. Vérifiez qu'il ne s'agit pas de la même personne.` : undefined,
           })}
@@ -195,16 +240,16 @@ export function FormulairePersonnel({ personnel }: { personnel?: PersonnelLigne 
             </Select>
           </Champ>
           {saisie('dateNaissance', 'Date de naissance', { type: 'date', max: aujourdhui })}
-          {saisie('cin', 'CIN', { aide: 'Espaces, points et tirets sont ignorés.' })}
-          {saisie('telephone', 'Téléphone', { type: 'tel', inputMode: 'tel' })}
+          {saisie('cin', 'CIN', { inputMode: 'numeric', aide: `${LONGUEUR.cin} chiffres au maximum.` })}
+          {saisie('telephone', 'Téléphone', { type: 'tel', inputMode: 'numeric', aide: '10 chiffres (ex. 0341234567).' })}
           <div className="sm:col-span-2">{saisie('adresse', 'Adresse')}</div>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Poste et affectation</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Fonction et affectation</CardTitle></CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          <Champ id="poste" label="Poste" requis erreur={erreurs.poste}
+          <Champ id="poste" label="Fonction" requis erreur={erreurs.poste}
             avert={posteAncien ? `« ${v.poste} » est un ancien libellé. Choisissez un poste de la liste pour harmoniser.` : undefined}>
             <Select value={v.poste} onValueChange={(x) => setTexte('poste', x)}>
               <SelectTrigger id="poste" className="h-11 w-full text-base" aria-invalid={!!erreurs.poste} aria-describedby="poste-msg">
@@ -215,7 +260,7 @@ export function FormulairePersonnel({ personnel }: { personnel?: PersonnelLigne 
               </SelectContent>
             </Select>
           </Champ>
-          <Champ id="salle" label="Salle habituelle">
+          <Champ id="salle" label="Salle / classe habituelle">
             <Select value={v.salle} onValueChange={(x) => setV((p) => ({ ...p, salle: x }))}>
               <SelectTrigger id="salle" className="h-11 w-full text-base"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -230,8 +275,8 @@ export function FormulairePersonnel({ personnel }: { personnel?: PersonnelLigne 
               onChange={(e) => setV((p) => ({ ...p, autorisationEnseigner: e.target.checked }))} />
             Autorisé à enseigner
           </label>
-          {saisie('dateEmbauche', "Date d'embauche", { type: 'date', requis: true })}
-          {saisie('dateRetraite', 'Date de retraite prévue', { type: 'date' })}
+          {saisie('dateEmbauche', consultant ? 'Début de mission' : "Date d'embauche", { type: 'date', requis: true })}
+          {!consultant && saisie('dateRetraite', 'Date de retraite prévue', { type: 'date' })}
           {edition && personnel?.dateDepart && saisie('dateDepart', 'Date de départ', {
             type: 'date', aide: "Videz ce champ pour annuler le départ. Un compte désactivé doit alors être réactivé depuis « Utilisateurs ».",
           })}
@@ -241,10 +286,17 @@ export function FormulairePersonnel({ personnel }: { personnel?: PersonnelLigne 
       <Card>
         <CardHeader><CardTitle>Administratif (confidentiel)</CardTitle></CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          {saisie('numeroCnaps', 'Numéro CNAPS')}
+          {consultant ? (
+            <>
+              {saisie('nif', 'NIF', { requis: true, inputMode: 'numeric', aide: `Numéro d'identification fiscale (${LONGUEUR.nif} chiffres au maximum).` })}
+              {saisie('numeroStatistique', 'Numéro statistique', { inputMode: 'numeric', aide: `Facultatif, ${LONGUEUR.numeroStatistique} chiffres au maximum.` })}
+            </>
+          ) : (
+            saisie('numeroCnaps', 'Numéro CNaPS', { inputMode: 'numeric', aide: `${LONGUEUR.numeroCnaps} chiffres au maximum.` })
+          )}
           {saisie('banque', 'Banque')}
-          {saisie('indemnite', 'Indemnité de transport par jour (Ar)', { inputMode: 'numeric' })}
-          <p className="self-end text-sm text-muted-foreground">Ces informations ne sont visibles que de l&apos;administrateur, de la directrice et du comptable.</p>
+          {saisie('indemnite', 'Transport par jour (Ar)', { inputMode: 'numeric' })}
+          <p className="self-end text-sm text-muted-foreground sm:col-span-2">Ces informations ne sont visibles que de l&apos;administrateur, de la directrice et du comptable.</p>
         </CardContent>
       </Card>
 

@@ -5,7 +5,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import { messageErreur } from '@/lib/messages';
-import type { AnneeBulletin, ClasseBulletins, SallePedago } from '@/lib/types';
+import type { AnneeBulletin, SallePedago } from '@/lib/types';
+import type { ClasseBulletinsDetail } from '@/lib/bulletin-types';
 import { ModaleCrud } from '@/components/structure/ModaleCrud';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -27,7 +28,7 @@ export default function PageBulletins() {
   const [niveauId, setNiveauId] = useState('');
   const [semestre, setSemestre] = useState('1');
   const [anneeId, setAnneeId] = useState('');
-  const [classe, setClasse] = useState<ClasseBulletins | null>(null);
+  const [classe, setClasse] = useState<ClasseBulletinsDetail | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [modale, setModale] = useState(false);
@@ -57,7 +58,7 @@ export default function PageBulletins() {
   const charger = useCallback(() => {
     if (!salleId || !niveauId || (voitHistorique && !anneeId)) { setClasse(null); return; }
     const suffixe = voitHistorique ? `&anneeId=${anneeId}` : '';
-    api.get<ClasseBulletins>(`/bulletins/classe?salleId=${salleId}&niveauId=${niveauId}&semestre=${semestre}${suffixe}`)
+    api.get<ClasseBulletinsDetail>(`/bulletins/classe?salleId=${salleId}&niveauId=${niveauId}&semestre=${semestre}${suffixe}`)
       .then((c) => { setClasse(c); setErreur(null); })
       .catch((e) => { setClasse(null); setErreur(messageErreur(e)); });
   }, [salleId, niveauId, semestre, anneeId, voitHistorique]);
@@ -66,11 +67,12 @@ export default function PageBulletins() {
   async function publierClasse() {
     setEnCours(true); setErreurModale(null);
     try {
-      const r = await api.post<{ publies: number; sansAppreciation: number; parentsPrevenus: number }>('/bulletins/classe/publication', {
+      const r = await api.post<{ publies: number; sansAppreciation: number; incomplets: number; parentsPrevenus: number }>('/bulletins/classe/publication', {
         salleId: Number(salleId), niveauId: Number(niveauId), semestre: Number(semestre),
       });
       setInfo(
         `${r.publies} bulletin(s) publié(s), ${r.parentsPrevenus} parent(s) prévenu(s).` +
+        (r.incomplets > 0 ? ` ${r.incomplets} incomplet(s) : non publié(s).` : '') +
         (r.sansAppreciation > 0 ? ` ${r.sansAppreciation} sans appréciation : non publié(s).` : ''),
       );
       setModale(false);
@@ -87,13 +89,15 @@ export default function PageBulletins() {
   }
 
   const redigees = classe?.eleves.filter((e) => e.aAppreciation).length ?? 0;
+  const complets = classe?.eleves.filter((e) => e.complet).length ?? 0;
+  const aPublier = classe?.eleves.filter((e) => e.complet && e.aAppreciation && !e.publie).length ?? 0;
   const publies = classe?.eleves.filter((e) => e.publie).length ?? 0;
 
   return (
     <div>
       <h1 className="mb-1 text-3xl font-semibold">Bulletins</h1>
       <p className="mb-6 text-sm text-muted-foreground">
-        {role === 'ENSEIGNANT' ? "Ouvrez le bulletin d'un élève pour rédiger son appréciation." : 'Consultation, publication et impression des bulletins.'}
+        {role === 'ENSEIGNANT' ? "Ouvrez le bulletin d'un élève pour évaluer chaque ligne et rédiger son appréciation." : 'Consultation, publication et impression des bulletins.'}
       </p>
 
       <div className="mb-4 flex flex-wrap items-end gap-3">
@@ -140,7 +144,7 @@ export default function PageBulletins() {
       {classe && (
         <>
           <p className="mb-2 text-sm text-muted-foreground">
-            {classe.eleves.length} élève(s) · {redigees} appréciation(s) rédigée(s) · {publies} bulletin(s) publié(s)
+            {classe.eleves.length} élève(s) · {complets} bulletin(s) complet(s) · {redigees} appréciation(s) rédigée(s) · {publies} publié(s)
           </p>
           {classe.eleves.length === 0 ? (
             <Alert role="status"><AlertDescription>Aucun élève validé dans cette classe pour cette année.</AlertDescription></Alert>
@@ -150,6 +154,7 @@ export default function PageBulletins() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Élève</TableHead>
+                    <TableHead>Évaluations</TableHead>
                     <TableHead>Appréciation</TableHead>
                     <TableHead>Parents</TableHead>
                     <TableHead><span className="sr-only">Action</span></TableHead>
@@ -159,6 +164,7 @@ export default function PageBulletins() {
                   {classe.eleves.map((e) => (
                     <TableRow key={e.inscriptionId}>
                       <TableCell className="font-medium">{e.prenom} {e.nom}</TableCell>
+                      <TableCell className="tabular-nums">{e.evalue} / {e.total} {e.total > 0 && (e.complet ? <Badge variant="outline">Complet</Badge> : <Badge variant="secondary">Incomplet</Badge>)}</TableCell>
                       <TableCell>{e.aAppreciation ? <Badge variant="outline">Rédigée</Badge> : <Badge variant="secondary">À rédiger</Badge>}</TableCell>
                       <TableCell>{e.publie ? <Badge>Publié</Badge> : <Badge variant="secondary">Non publié</Badge>}</TableCell>
                       <TableCell className="text-right">
@@ -177,11 +183,11 @@ export default function PageBulletins() {
 
       <ModaleCrud
         ouvert={modale} titre="Publier les bulletins de la classe"
-        description="Les parents verront ces bulletins et recevront une notification. Seuls ceux qui ont une appréciation sont publiés."
+        description="Les parents verront ces bulletins et recevront une notification. Seuls les bulletins complets (toutes les lignes évaluées) et dotés d'une appréciation sont publiés."
         libelleValider="Publier" enCours={enCours} erreur={erreurModale}
         onFermer={() => setModale(false)} onValider={publierClasse}
       >
-        <p>Publier les bulletins du semestre {semestre} de la salle {classe?.salle.nom} ({Math.max(redigees - publies, 0)} à publier) ?</p>
+        <p>Publier les bulletins du semestre {semestre} de la salle {classe?.salle.nom} ({aPublier} à publier) ?</p>
       </ModaleCrud>
     </div>
   );

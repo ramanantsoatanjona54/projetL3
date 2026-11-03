@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize, ArrayMinSize, IsArray, IsInt, IsNumber, IsOptional, Matches, Max, Min, ValidateIf, ValidateNested,
 } from 'class-validator';
@@ -19,6 +19,13 @@ export class CreerExamenDto {
 }
 
 export class ModifierExamenDto extends PartialType(CreerExamenDto) {}
+
+// Nouvelle discipline (matière) proposée au choix pour les examens
+export class CreerMatiereDto {
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value))
+  @Matches(/^[\p{L}][\p{L}\p{M}' -]{1,59}$/u, { message: 'Nom invalide : 2 à 60 lettres (espaces, tirets et apostrophes autorisés).' })
+  nom: string;
+}
 
 export class NoteExamenDto {
   @IsInt() inscriptionId: number;

@@ -17,8 +17,11 @@ const quand = (d: Date) =>
   d.toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ZONE });
 const voitTout = (r: RoleUtilisateur) => r === RoleUtilisateur.ADMIN || r === RoleUtilisateur.DIRECTRICE;
 const nomAffiche = (u: { role: RoleUtilisateur; personnel: { nom: string; prenom: string } | null }) =>
-  u.personnel ? `${u.personnel.prenom} ${u.personnel.nom}` : u.role === 'DIRECTRICE' ? 'Direction' : u.role === 'SECRETARIAT' ? 'Secrétariat' : 'École';
-
+  u.personnel
+    ? `${u.personnel.prenom} ${u.personnel.nom}`
+    : u.role === 'DIRECTRICE' ? 'Direction'
+    : u.role === 'EDUCATEUR' ? 'Éducateur spécialisé'
+    : u.role === 'SECRETARIAT' ? 'Secrétariat' : 'École';
 export interface Acteur { id: number; role: RoleUtilisateur }
 export interface FiltresRdv { statut?: string; page?: string; taille?: string }
 
@@ -42,28 +45,12 @@ export class RendezVousService {
   }
 
   // Direction, secrétariat et enseignant(e) de la salle d'un de ses enfants (année en cours)
-  private async interlocuteurs(parentId: number) {
-    const maintenant = new Date();
-    const inscriptions = await this.prisma.inscription.findMany({
-      where: {
-        statut: 'validee',
-        anneeScolaire: { dateDebut: { lte: maintenant }, dateFin: { gte: maintenant } },
-        eleve: { parents: { some: { parentId } } },
-      },
-      select: { salleId: true },
-    });
-    const salleIds = [...new Set(inscriptions.map((i) => i.salleId).filter((s): s is number => s !== null))];
-
+    // Seuls interlocuteurs possibles : la Direction et l'éducateur spécialisé
+  private async interlocuteurs(_parentId: number) {
     const comptes = await this.prisma.utilisateur.findMany({
-      where: {
-        actif: true,
-        OR: [
-          { role: { in: [RoleUtilisateur.DIRECTRICE, RoleUtilisateur.SECRETARIAT] } },
-          { role: RoleUtilisateur.ENSEIGNANT, personnel: { salleAffecteeId: { in: salleIds }, dateDepart: null } },
-        ],
-      },
+      where: { actif: true, role: { in: [RoleUtilisateur.DIRECTRICE, RoleUtilisateur.EDUCATEUR] } },
       orderBy: { id: 'asc' },
-      select: { id: true, role: true, personnel: { select: { nom: true, prenom: true, salleAffectee: { select: { nom: true } } } } },
+      select: { id: true, role: true, personnel: { select: { nom: true, prenom: true } } },
     });
 
     // Un compte « de fonction » (sans fiche personnel) n'apparaît qu'une fois par rôle : pas de doublon
@@ -74,11 +61,10 @@ export class RendezVousService {
         if (dejaVu.has(c.role)) continue;
         dejaVu.add(c.role);
       }
-      const fonction =
-        c.role === 'ENSEIGNANT'
-          ? `Enseignant(e)${c.personnel?.salleAffectee ? ` · salle ${c.personnel.salleAffectee.nom}` : ''}`
-          : c.role === 'DIRECTRICE' ? 'Direction' : 'Secrétariat';
-      liste.push({ utilisateurId: c.id, nom: nomAffiche(c), fonction });
+      liste.push({
+        utilisateurId: c.id, nom: nomAffiche(c),
+        fonction: c.role === 'DIRECTRICE' ? 'Direction' : 'Éducateur spécialisé',
+      });
     }
     return liste;
   }

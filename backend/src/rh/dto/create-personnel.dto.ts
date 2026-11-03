@@ -7,18 +7,24 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  Matches,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
 import { POSTES } from '../postes';
+import { EstNomPropre, EstNumeroChiffres, EstTelephone } from '../../common/validation';
+
+// Longueurs maximales des numéros (chiffres uniquement) — à ajuster ici si besoin
+const LONGUEUR_CIN = 12;
+const LONGUEUR_NIF = 10;
+const LONGUEUR_STATISTIQUE = 17;
+const LONGUEUR_CNAPS = 12;
 
 export class CreatePersonnelDto {
-  @IsString() @IsNotEmpty() @MaxLength(100)
+  @IsString() @IsNotEmpty() @EstNomPropre('Le nom')
   nom: string;
 
-  @IsString() @IsNotEmpty() @MaxLength(100)
+  @IsString() @IsNotEmpty() @EstNomPropre('Le prénom')
   prenom: string;
 
   @IsOptional() @IsIn(['M', 'F'])
@@ -27,22 +33,29 @@ export class CreatePersonnelDto {
   @IsOptional() @IsDateString()
   dateNaissance?: string;
 
-  @IsOptional()
-  @Matches(/^[A-Za-z0-9\s.\-]{6,30}$/, { message: 'Le CIN doit contenir de 6 à 30 caractères (lettres, chiffres, espaces, points, tirets).' })
+  @IsOptional() @EstNumeroChiffres('Le CIN', LONGUEUR_CIN)
   cin?: string;
 
   @IsOptional() @IsString() @MaxLength(255)
   adresse?: string;
 
-  @IsOptional()
-  @Matches(/^[0-9+\s().\-]{6,30}$/, { message: 'Numéro de téléphone invalide.' })
+  @IsOptional() @EstTelephone()
   telephone?: string;
 
   @IsOptional() @IsNumber() @Min(0) @Max(10000000)
   indemniteTransportJour?: number;
 
-  @IsOptional() @IsString() @MaxLength(50)
+  @IsOptional() @EstNumeroChiffres('Le numéro CNaPS', LONGUEUR_CNAPS)
   numeroCnaps?: string;
+
+  @IsOptional() @IsIn(['SALARIE', 'CONSULTANT'])
+  typePersonnel?: string;
+
+  @IsOptional() @EstNumeroChiffres('Le NIF', LONGUEUR_NIF)
+  nif?: string;
+
+  @IsOptional() @EstNumeroChiffres('Le numéro statistique', LONGUEUR_STATISTIQUE)
+  numeroStatistique?: string;
 
   @IsIn([...POSTES], { message: 'Poste inconnu : choisissez un poste dans la liste.' })
   poste: string; // fonction
@@ -56,7 +69,7 @@ export class CreatePersonnelDto {
   @IsOptional() @IsBoolean()
   autorisationEnseigner?: boolean;
 
-  @IsOptional() @IsString() @MaxLength(100)
+  @IsOptional() @IsString() @EstNomPropre('La banque')
   banque?: string;
 
   @IsDateString()

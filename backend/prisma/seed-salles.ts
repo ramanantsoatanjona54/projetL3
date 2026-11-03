@@ -40,11 +40,10 @@ async function main() {
       // ex: "1A", "2B", "3D" -> ordre de la classe + lettre
       const nomSalle = `${classe.ordre}${lettre}`;
 
-      const salle = await prisma.salle.upsert({
-        where: { nom: nomSalle },
-        update: {},
-        create: { nom: nomSalle },
-      });
+           // Salle permanente (sans année) : on la cherche puis on la crée si besoin
+      const salle =
+        (await prisma.salle.findFirst({ where: { nom: nomSalle, anneeScolaireId: null } })) ??
+        (await prisma.salle.create({ data: { nom: nomSalle } }));
 
       // relie la salle a TOUS les niveaux de sa classe (many-to-many)
       await prisma.salle.update({

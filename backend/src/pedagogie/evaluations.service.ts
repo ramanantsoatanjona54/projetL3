@@ -1,14 +1,14 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { NiveauCompetence, Prisma, RoleUtilisateur } from '@prisma/client';
+import { Prisma, RoleUtilisateur } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { SaisirEvaluationsDto, SuiviDto } from './dto/evaluations.dto';
+import { SuiviDto } from './dto/evaluations.dto';
 
 export interface Acteur { id: number; role: RoleUtilisateur }
 type TypeRef = 'domaines' | 'lecons';
 // Le cycle de la classe décide du référentiel : prescolaire = domaines/compétences, sinon leçons
 const typeDe = (cycle: string): TypeRef => (cycle === 'prescolaire' ? 'domaines' : 'lecons');
 
-export interface Element { id: number; libelle: string; evalues: number; vu?: boolean }
+export interface Element { id: number; libelle: string; vu?: boolean }
 export interface Section { titre: string | null; elements: Element[] }
 export interface Groupe { id: number; titre: string; statut?: string | null; sections: Section[] }
 
@@ -98,7 +98,6 @@ export class EvaluationsService {
     const c = await this.contexte(acteur, salleId, niveauId, false);
     const ceinture = await this.prisma.ceinture.findFirst({ where: { id: ceintureId, semestre: { niveauId } }, select: { id: true } });
     if (!ceinture) throw new NotFoundException('Ceinture introuvable pour ce niveau.');
-    const inscIds = c.inscriptions.map((i) => i.id);
     const groupes: Groupe[] = [];
 
     if (c.type === 'domaines') {
@@ -113,20 +112,11 @@ export class EvaluationsService {
           },
         },
       });
-      const compIds = domaines.flatMap((d) => [...d.competences, ...d.sousDomaines.flatMap((s) => s.competences)].map((x) => x.id));
-      const [comptes, suivis] = await Promise.all([
-        compIds.length
-          ? this.prisma.noteCompetence.groupBy({
-              by: ['competenceId'], where: { competenceId: { in: compIds }, inscriptionId: { in: inscIds } }, _count: { _all: true },
-            })
-          : Promise.resolve([]),
-        this.prisma.progressionDomaine.findMany({
-          where: { salleId, domaineId: { in: domaines.map((d) => d.id) } }, select: { domaineId: true, statut: true },
-        }),
-      ]);
-      const nb = new Map(comptes.map((g) => [g.competenceId, g._count._all]));
+      const suivis = await this.prisma.progressionDomaine.findMany({
+        where: { salleId, domaineId: { in: domaines.map((d) => d.id) } }, select: { domaineId: true, statut: true },
+      });
       const statut = new Map(suivis.map((s) => [s.domaineId, s.statut]));
-      const el = (x: { id: number; libelle: string }): Element => ({ id: x.id, libelle: x.libelle, evalues: nb.get(x.id) ?? 0 });
+      const el = (x: { id: number; libelle: string }): Element => ({ id: x.id, libelle: x.libelle });
 
       for (const d of domaines) {
         const sections: Section[] = [];
@@ -141,15 +131,9 @@ export class EvaluationsService {
         select: { id: true, titre: true, matiere: { select: { id: true, nom: true } }, rubrique: { select: { nom: true } } },
       });
       const ids = lecons.map((l) => l.id);
-      const [comptes, vues] = await Promise.all([
-        ids.length
-          ? this.prisma.noteLecon.groupBy({
-              by: ['leconId'], where: { leconId: { in: ids }, inscriptionId: { in: inscIds } }, _count: { _all: true },
-            })
-          : Promise.resolve([]),
-        this.prisma.progressionLecon.findMany({ where: { salleId, leconId: { in: ids } }, select: { leconId: true } }),
-      ]);
-      const nb = new Map(comptes.map((g) => [g.leconId, g._count._all]));
+      const vues = ids.length
+        ? await this.prisma.progressionLecon.findMany({ where: { salleId, leconId: { in: ids } }, select: { leconId: true } })
+        : [];
       const vuesSet = new Set(vues.map((v) => v.leconId));
 
       for (const l of lecons) {
@@ -158,107 +142,13 @@ export class EvaluationsService {
         const titre = l.rubrique?.nom ?? null;
         let s = g.sections.find((x) => x.titre === titre);
         if (!s) { s = { titre, elements: [] }; g.sections.push(s); }
-        s.elements.push({ id: l.id, libelle: l.titre, evalues: nb.get(l.id) ?? 0, vu: vuesSet.has(l.id) });
+        s.elements.push({ id: l.id, libelle: l.titre, vu: vuesSet.has(l.id) });
       }
     }
     return { type: c.type, effectif: c.inscriptions.length, groupes };
   }
 
-  private async verifierElement(type: TypeRef, niveauId: number, elementId: number) {
-    if (type === 'domaines') {
-      const x = await this.prisma.competence.findFirst({
-        where: {
-          id: elementId,
-          OR: [
-            { domaine: { ceinture: { semestre: { niveauId } } } },
-            { sousDomaine: { domaine: { ceinture: { semestre: { niveauId } } } } },
-          ],
-        },
-        select: { id: true, libelle: true },
-      });
-      if (!x) throw new NotFoundException('Compétence introuvable pour ce niveau.');
-      return { id: x.id, libelle: x.libelle };
-    }
-    const l = await this.prisma.lecon.findFirst({ where: { id: elementId, niveauId }, select: { id: true, titre: true } });
-    if (!l) throw new NotFoundException('Leçon introuvable pour ce niveau.');
-    return { id: l.id, libelle: l.titre };
-  }
-
-  async eleves(acteur: Acteur, salleId: number, niveauId: number, elementId: number) {
-    const c = await this.contexte(acteur, salleId, niveauId, false);
-    const element = await this.verifierElement(c.type, niveauId, elementId);
-    const inscIds = c.inscriptions.map((i) => i.id);
-    const notes =
-      c.type === 'domaines'
-        ? await this.prisma.noteCompetence.findMany({ where: { competenceId: elementId, inscriptionId: { in: inscIds } }, select: { inscriptionId: true, niveau: true } })
-        : await this.prisma.noteLecon.findMany({ where: { leconId: elementId, inscriptionId: { in: inscIds } }, select: { inscriptionId: true, niveau: true } });
-    const parInsc = new Map(notes.map((n) => [n.inscriptionId, n.niveau]));
-    return {
-      element,
-      eleves: c.inscriptions.map((i) => ({
-        inscriptionId: i.id, nom: i.eleve.nom, prenom: i.eleve.prenom, matricule: i.eleve.matricule,
-        niveau: parInsc.get(i.id) ?? null,
-      })),
-    };
-  }
-
-  // ---------- Écriture ----------
-
-  async enregistrer(acteur: Acteur, dto: SaisirEvaluationsDto) {
-    const c = await this.contexte(acteur, dto.salleId, dto.niveauId, true);
-    const enseignantId = c.personnelId as number;
-    const element = await this.verifierElement(c.type, dto.niveauId, dto.elementId);
-
-    const eligibles = new Set(c.inscriptions.map((i) => i.id));
-    const vus = new Set<number>();
-    for (const n of dto.notes) {
-      if (!eligibles.has(n.inscriptionId)) throw new BadRequestException('Certains élèves ne font pas partie de cette classe.');
-      if (vus.has(n.inscriptionId)) throw new BadRequestException('Un élève apparaît deux fois dans la saisie.');
-      vus.add(n.inscriptionId);
-    }
-
-    const ids = dto.notes.map((n) => n.inscriptionId);
-    const existantes: { id: number; inscriptionId: number; niveau: NiveauCompetence }[] =
-      c.type === 'domaines'
-        ? await this.prisma.noteCompetence.findMany({ where: { competenceId: dto.elementId, inscriptionId: { in: ids } }, select: { id: true, inscriptionId: true, niveau: true } })
-        : await this.prisma.noteLecon.findMany({ where: { leconId: dto.elementId, inscriptionId: { in: ids } }, select: { id: true, inscriptionId: true, niveau: true } });
-    const parInsc = new Map(existantes.map((e) => [e.inscriptionId, e]));
-
-    const ops: Prisma.PrismaPromise<unknown>[] = [];
-    let creees = 0, modifiees = 0, retirees = 0;
-    for (const n of dto.notes) {
-      const ex = parInsc.get(n.inscriptionId);
-      if (n.niveau === null) {
-        if (!ex) continue;
-        retirees++;
-        ops.push(c.type === 'domaines' ? this.prisma.noteCompetence.delete({ where: { id: ex.id } }) : this.prisma.noteLecon.delete({ where: { id: ex.id } }));
-      } else if (!ex) {
-        creees++;
-        ops.push(
-          c.type === 'domaines'
-            ? this.prisma.noteCompetence.create({ data: { inscriptionId: n.inscriptionId, competenceId: dto.elementId, niveau: n.niveau, enseignantId } })
-            : this.prisma.noteLecon.create({ data: { inscriptionId: n.inscriptionId, leconId: dto.elementId, niveau: n.niveau, enseignantId } }),
-        );
-      } else if (ex.niveau !== n.niveau) {
-        modifiees++;
-        const data = { niveau: n.niveau, enseignantId, dateSaisie: new Date() };
-        ops.push(c.type === 'domaines' ? this.prisma.noteCompetence.update({ where: { id: ex.id }, data }) : this.prisma.noteLecon.update({ where: { id: ex.id }, data }));
-      }
-    }
-    if (ops.length === 0) return { creees: 0, modifiees: 0, retirees: 0 };
-
-    ops.push(
-      this.prisma.journalAudit.create({
-        data: {
-          utilisateurId: acteur.id, action: 'EVALUATIONS_SAISIES', entite: c.type === 'domaines' ? 'Competence' : 'Lecon',
-          entiteId: dto.elementId,
-          details: { salle: c.salle.nom, niveauId: dto.niveauId, element: element.libelle.slice(0, 120), creees, modifiees, retirees },
-        },
-      }),
-    );
-    await this.prisma.$transaction(ops);
-    return { creees, modifiees, retirees };
-  }
+  // ---------- Écriture : suivi de classe (vu en classe), jamais de note d'élève ----------
 
   async suivi(acteur: Acteur, dto: SuiviDto) {
     const c = await this.contexte(acteur, dto.salleId, dto.niveauId, true);

@@ -1,19 +1,22 @@
-
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
+import { messageErreur } from '@/lib/messages';
 import { normaliser } from '@/lib/normaliser';
-import type { Eleve } from '@/lib/types';
+import type { Eleve, ParentEleve } from '@/lib/types';
+import { useAuth } from '@/context/AuthContext';
 import { AjouterParent, type ResultatAjout } from '@/components/eleves/AjouterParent';
+import { ModaleCrud } from '@/components/structure/ModaleCrud';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
+const MAX_RESPONSABLES = 3;
 const fr = (d?: string | null) => (d ? new Date(d).toLocaleDateString('fr-FR') : '—');
 const LIENS: Record<string, string> = { pere: 'Père', mere: 'Mère', tuteur: 'Tuteur' };
 const STATUTS: Record<string, string> = {
@@ -21,6 +24,7 @@ const STATUTS: Record<string, string> = {
   validee: 'Validée',
   annulee: 'Annulée',
 };
+const chiffres = (s?: string | null) => (s ?? '').replace(/\D/g, '');
 
 function age(naissance: string) {
   const n = new Date(naissance);
@@ -41,9 +45,16 @@ function Info({ label, children }: { label: string; children: React.ReactNode })
 
 export default function FicheEleve() {
   const { id } = useParams<{ id: string }>();
+  const { utilisateur } = useAuth();
+  const estAdmin = utilisateur?.role === 'ADMIN';
+
   const [eleve, setEleve] = useState<Eleve | null>(null);
   const [etat, setEtat] = useState<'chargement' | 'ok' | 'introuvable' | 'erreur'>('chargement');
   const [message, setMessage] = useState<string | null>(null);
+
+  const [aRetirer, setARetirer] = useState<ParentEleve | null>(null);
+  const [enCours, setEnCours] = useState(false);
+  const [erreurRetrait, setErreurRetrait] = useState<string | null>(null);
 
   const charger = useCallback(async () => {
     try {
@@ -74,6 +85,22 @@ export default function FicheEleve() {
             `Si ce n'est pas la bonne personne, vérifiez le numéro de téléphone.`,
     );
     charger();
+  }
+
+  async function retirer() {
+    if (!aRetirer) return;
+    setEnCours(true);
+    setErreurRetrait(null);
+    try {
+      await api.delete(`/eleves/${id}/parents/${aRetirer.parentId}`);
+      setMessage(`${aRetirer.parent.prenom} ${aRetirer.parent.nom} n'est plus rattaché(e) à cet élève.`);
+      setARetirer(null);
+      charger();
+    } catch (e) {
+      setErreurRetrait(messageErreur(e));
+    } finally {
+      setEnCours(false);
+    }
   }
 
   if (etat === 'chargement') return <p className="text-muted-foreground">Chargement...</p>;
@@ -116,6 +143,10 @@ export default function FicheEleve() {
 
   const assuranceExpiree =
     eleve.assuranceExpiration && new Date(eleve.assuranceExpiration) < new Date();
+
+  const parents = eleve.parents ?? [];
+  const liensPris = parents.map((p) => p.lienParente);
+  const contactFamille = chiffres(eleve.telephone);
 
   return (
     <div className="space-y-6">
@@ -197,7 +228,7 @@ export default function FicheEleve() {
           </CardHeader>
           <CardContent>
             <dl className="grid gap-4 sm:grid-cols-2">
-              <Info label="Téléphone">{eleve.telephone}</Info>
+              <Info label="Contact de la famille">{eleve.telephone}</Info>
               <Info label="Quartier">{eleve.quartier}</Info>
               <Info label="Email principal">{eleve.email1 && <span className="break-all">{eleve.email1}</span>}</Info>
               <Info label="Email secondaire">{eleve.email2 && <span className="break-all">{eleve.email2}</span>}</Info>
@@ -209,18 +240,24 @@ export default function FicheEleve() {
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Parents et tuteurs</CardTitle>
-          <AjouterParent eleveId={eleve.id} onAjoute={apresAjout} />
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div>
+            <CardTitle>Parents et tuteurs</CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground" aria-live="polite">
+              {parents.length} sur {MAX_RESPONSABLES} responsable(s)
+              {parents.length >= MAX_RESPONSABLES ? ' · maximum atteint' : ''}
+            </p>
+          </div>
+          <AjouterParent eleveId={eleve.id} onAjoute={apresAjout} liensPris={liensPris} />
         </CardHeader>
         <CardContent>
-          {!eleve.parents?.length ? (
+          {!parents.length ? (
             <p className="text-muted-foreground">
               Aucun parent rattaché pour le moment.
             </p>
           ) : (
             <ul className="divide-y divide-border">
-              {eleve.parents.map((pe) => (
+              {parents.map((pe) => (
                 <li
                   key={pe.parentId}
                   className="flex flex-wrap items-center justify-between gap-2 py-3"
@@ -234,9 +271,24 @@ export default function FicheEleve() {
                       {pe.parent.email ? ` · ${pe.parent.email}` : ''}
                     </p>
                   </div>
-                  <Badge variant="secondary">
-                    {LIENS[pe.lienParente] ?? pe.lienParente}
-                  </Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {contactFamille && chiffres(pe.parent.telephone) === contactFamille && (
+                      <Badge variant="outline">Contact de la famille</Badge>
+                    )}
+                    <Badge variant="secondary">
+                      {LIENS[pe.lienParente] ?? pe.lienParente}
+                    </Badge>
+                    {estAdmin && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => { setErreurRetrait(null); setARetirer(pe); }}
+                        aria-label={`Retirer ${pe.parent.prenom} ${pe.parent.nom}`}
+                      >
+                        Retirer
+                      </Button>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -314,6 +366,23 @@ export default function FicheEleve() {
           )}
         </CardContent>
       </Card>
+
+      <ModaleCrud
+        ouvert={!!aRetirer}
+        titre="Retirer ce responsable ?"
+        description={aRetirer ? `${aRetirer.parent.prenom} ${aRetirer.parent.nom} · ${LIENS[aRetirer.lienParente] ?? aRetirer.lienParente}` : ''}
+        libelleValider="Retirer"
+        destructif
+        enCours={enCours}
+        erreur={erreurRetrait}
+        onFermer={() => { if (!enCours) setARetirer(null); }}
+        onValider={retirer}
+      >
+        <p className="text-sm text-muted-foreground">
+          Ce responsable ne sera plus rattaché à cet élève et ne verra plus cet enfant dans son espace parent.
+          Ses autres enfants éventuels ne sont pas touchés. Cette action est enregistrée dans le journal d&apos;audit.
+        </p>
+      </ModaleCrud>
     </div>
   );
 }

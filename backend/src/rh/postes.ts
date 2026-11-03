@@ -7,5 +7,6 @@ export const POSTES = [
   'Surveillant',
   "Agent d'entretien",
   'Gardien',
+  'Éducateur spécialisé',
   'Autre',
 ] as const;

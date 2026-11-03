@@ -3,7 +3,7 @@ import { RoleUtilisateur } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { CreerExamenDto, ModifierExamenDto, SaisirNotesExamenDto } from './dto/examens.dto';
+import { CreerExamenDto, CreerMatiereDto, ModifierExamenDto, SaisirNotesExamenDto } from './dto/examens.dto';
 import { ExamensService } from './examens.service';
 
 const { ADMIN, DIRECTRICE, ENSEIGNANT } = RoleUtilisateur;
@@ -18,6 +18,9 @@ export class ExamensController {
 
   @Get() lister() { return this.service.lister(); }
   @Get('matieres') matieres() { return this.service.matieres(); }
+  @Post('matieres') @Roles(ADMIN)
+  creerMatiere(@Body() dto: CreerMatiereDto, @Req() req: any) { return this.service.creerMatiere(this.acteur(req), dto); }
+
   @Get('salles') salles(@Req() req: any) { return this.service.salles(this.acteur(req)); }
 
   @Get(':id')

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { RequireAuth } from '@/context/RequireAuth';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -12,16 +13,16 @@ import { NotificationsLien } from '@/components/NotificationsLien';
 import { InactiviteAlerte } from '@/components/InactiviteAlerte';
 import { BasculeTheme } from '@/components/BasculeTheme';
 import { Logo } from '@/components/Logo';
-import { useEffect , useState } from 'react';
 import { api } from '@/lib/api';
 
 const LIBELLES_ROLE: Record<string, string> = {
   ADMIN: 'Administrateur',
-  ENSEIGNANT: 'Enseignant',
+  ENSEIGNANT: 'Enseignante',
   SECRETARIAT: 'Secrétariat',
   COMPTABLE: 'Comptable',
   DIRECTRICE: 'Directrice',
   PARENT: 'Parent',
+  EDUCATEUR: 'Éducateur spécialisé',
 };
 
 interface LienMenu {
@@ -31,7 +32,7 @@ interface LienMenu {
 }
 
 // Le menu dépend du rôle. La vraie protection reste côté serveur (@Roles) : le menu n'est qu'un confort.
-function liensPour(role: string, profil: { avecExamens: boolean } | null) {
+function liensPour(role: string, profil: { avecExamens: boolean } | null): LienMenu[] {
   const communication: LienMenu[] = [
     { href: '/dashboard/annonces', libelle: 'Annonces' },
     { href: '/dashboard/menu', libelle: 'Menu' },
@@ -59,7 +60,8 @@ function liensPour(role: string, profil: { avecExamens: boolean } | null) {
   if (role === 'ENSEIGNANT') {
     return [
       { href: '/dashboard/absences', libelle: 'Absences' },
-      { href: '/dashboard/evaluations', libelle: 'Évaluations' },
+      { href: '/dashboard/evaluations', libelle: 'Suivi pédagogique' },
+      { href: '/dashboard/bulletins', libelle: 'Bulletins' },
       ...(profil?.avecExamens ? [{ href: '/dashboard/examens-blancs', libelle: 'Examens blancs' }] : []),
       { href: '/dashboard/enseignant', libelle: 'Mon espace', exclure: ['/dashboard/enseignant/eleves'] },
       { href: '/dashboard/enseignant/eleves', libelle: 'Mes élèves' },
@@ -67,18 +69,27 @@ function liensPour(role: string, profil: { avecExamens: boolean } | null) {
       { href: '/dashboard/securite', libelle: 'Sécurité' },
     ];
   }
+  if (role === 'EDUCATEUR') {
+    return [
+      { href: '/dashboard/rendez-vous', libelle: 'Rendez-vous' },
+      { href: '/dashboard/securite', libelle: 'Sécurité' },
+    ];
+  }
 
   const est = (...roles: string[]) => roles.includes(role);
   const liens: LienMenu[] = [];
 
-    if (est('ADMIN', 'SECRETARIAT', 'DIRECTRICE')) {
+  if (est('ADMIN', 'SECRETARIAT', 'DIRECTRICE')) {
     liens.push({ href: '/dashboard/eleves', libelle: 'Élèves' });
+  }
+  if (est('ADMIN', 'SECRETARIAT')) {
+    liens.push({ href: '/dashboard/reinscriptions', libelle: 'Ré-inscriptions' });
   }
   if (est('SECRETARIAT', 'DIRECTRICE')) {
     liens.push({ href: '/dashboard/inscriptions', libelle: 'Inscriptions' });
-  }
-  if (est('SECRETARIAT', 'DIRECTRICE')) {
     liens.push({ href: '/dashboard/absences', libelle: 'Absences' });
+  }
+  if (est('DIRECTRICE')) {
     liens.push({ href: '/dashboard/rendez-vous', libelle: 'Rendez-vous' });
   }
   if (est('ADMIN', 'SECRETARIAT', 'DIRECTRICE')) {
@@ -104,12 +115,13 @@ function liensPour(role: string, profil: { avecExamens: boolean } | null) {
   if (est('DIRECTRICE', 'SECRETARIAT', 'COMPTABLE')) {
     liens.push({ href: '/dashboard/inventaire', libelle: 'Inventaire' });
   }
-   if (est('DIRECTRICE')) {
-    liens.push({ href: '/dashboard/evaluations', libelle: 'Évaluations' });
+  if (est('DIRECTRICE')) {
+    liens.push({ href: '/dashboard/evaluations', libelle: 'Suivi pédagogique' });
   }
   if (est('ADMIN', 'DIRECTRICE')) {
     liens.push({ href: '/dashboard/examens-blancs', libelle: 'Examens blancs' });
     liens.push({ href: '/dashboard/bulletins', libelle: 'Bulletins' });
+    liens.push({ href: '/dashboard/bulletin-modele', libelle: 'Contenu du bulletin' });
   }
   liens.push({ href: '/dashboard/securite', libelle: 'Sécurité' });
   liens.push(...communication);
@@ -160,12 +172,16 @@ export default function DashboardLayout({
 function Shell({ children }: { children: React.ReactNode }) {
   const { utilisateur, seDeconnecter } = useAuth();
   const role = utilisateur?.role ?? '';
-    const [profilEns, setProfilEns] = useState<{ avecExamens: boolean } | null>(null);
+  const [profilEns, setProfilEns] = useState<{ avecExamens: boolean } | null>(null);
+
   useEffect(() => {
     if (role !== 'ENSEIGNANT') return;
-    api.get<{ avecExamens: boolean }>('/enseignant/profil').then(setProfilEns).catch(() => setProfilEns(null));
+    api.get<{ avecExamens: boolean }>('/enseignant/profil')
+      .then(setProfilEns)
+      .catch(() => setProfilEns(null));
   }, [role]);
-  const accueil = role === 'PARENT' ? '/dashboard/parent' : '/dashboard';
+
+  const accueil = role === 'PARENT' ? '/dashboard/parent' : role === 'EDUCATEUR' ? '/dashboard/rendez-vous' : '/dashboard';
 
   return (
     <div className="min-h-screen bg-background print:bg-white">

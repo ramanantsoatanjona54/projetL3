@@ -41,7 +41,7 @@ export default function EspaceEnseignant() {
   useActualisationAuto(charger);
 
   if (utilisateur && !autorise) {
-    return <Alert variant="destructive" role="alert"><AlertDescription>Cet espace est réservé aux enseignants.</AlertDescription></Alert>;
+    return <Alert variant="destructive" role="alert"><AlertDescription>Cet espace est réservé aux enseignantes.</AlertDescription></Alert>;
   }
   if (erreur) return <Alert variant="destructive" role="alert"><AlertDescription>{erreur}</AlertDescription></Alert>;
   if (!d) return <p className="text-muted-foreground">Chargement...</p>;

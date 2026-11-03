@@ -7,12 +7,7 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 const jourMada = () => new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10); // UTC+3
 const enJour = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
-const filtreCompetence = (niveauId: number, numero: number): Prisma.CompetenceWhereInput => ({
-  OR: [
-    { domaine: { ceinture: { semestre: { niveauId, numero } } } },
-    { sousDomaine: { domaine: { ceinture: { semestre: { niveauId, numero } } } } },
-  ],
-});
+const lendemain = (d: Date) => new Date(d.getTime() + 24 * 3600 * 1000);
 
 @Injectable()
 export class EspaceEnseignantService {
@@ -22,8 +17,8 @@ export class EspaceEnseignantService {
     const maintenant = new Date();
     const annee =
       (await this.prisma.anneeScolaire.findFirst({
-        where: { dateDebut: { lte: maintenant }, dateFin: { gte: maintenant } }, select: { id: true },
-      })) ?? (await this.prisma.anneeScolaire.findFirst({ orderBy: { dateDebut: 'desc' }, select: { id: true } }));
+        where: { dateDebut: { lte: maintenant }, dateFin: { gte: maintenant } }, select: { id: true, dateFin: true },
+      })) ?? (await this.prisma.anneeScolaire.findFirst({ orderBy: { dateDebut: 'desc' }, select: { id: true, dateFin: true } }));
     if (!annee) throw new BadRequestException('Aucune année scolaire configurée.');
     return annee;
   }
@@ -37,17 +32,18 @@ export class EspaceEnseignantService {
     return u.personnel;
   }
 
-  // Avancement d'un niveau pour un semestre (compte uniquement, aucune donnée recopiée)
-  private async avancementSemestre(salleId: number, niveauId: number, domaines: boolean, numero: number, ids: number[]) {
+  // Avancement d'un niveau pour un semestre (compte uniquement, aucune donnée recopiée).
+  // « elements / attendues / saisies » = lignes du bulletin exigées et évaluées ; « suivi » = ce qui a été vu en classe.
+  private async avancementSemestre(salleId: number, niveauId: number, domaines: boolean, numero: number, ids: number[], anneeFin: Date) {
+    const lignes = { semestre: { niveauId, numero }, type: 'LIGNE' as const, archiveLe: null, creeLe: { lt: lendemain(anneeFin) } };
     const bulletins = ids.length
       ? this.prisma.bulletin.count({ where: { inscriptionId: { in: ids }, periode: `Semestre ${numero}`, appreciationGenerale: { not: null } } })
       : Promise.resolve(0);
 
     if (domaines) {
-      const f = filtreCompetence(niveauId, numero);
       const [elements, saisies, suiviTotal, suivi, rediges] = await Promise.all([
-        this.prisma.competence.count({ where: f }),
-        ids.length ? this.prisma.noteCompetence.count({ where: { inscriptionId: { in: ids }, competence: f } }) : 0,
+        this.prisma.elementBulletin.count({ where: lignes }),
+        ids.length ? this.prisma.evaluationBulletin.count({ where: { inscriptionId: { in: ids }, element: lignes } }) : 0,
         this.prisma.domaine.count({ where: { ceinture: { semestre: { niveauId, numero } } } }),
         this.prisma.progressionDomaine.count({ where: { salleId, statut: 'termine', domaine: { ceinture: { semestre: { niveauId, numero } } } } }),
         bulletins,
@@ -55,13 +51,14 @@ export class EspaceEnseignantService {
       return { semestre: numero, effectif: ids.length, elements, attendues: elements * ids.length, saisies, suiviTotal, suivi, bulletinsRediges: rediges };
     }
     const f: Prisma.LeconWhereInput = { niveauId, ceinture: { semestre: { numero } } };
-    const [elements, saisies, suivi, rediges] = await Promise.all([
+    const [elements, saisies, nbLecons, suivi, rediges] = await Promise.all([
+      this.prisma.elementBulletin.count({ where: lignes }),
+      ids.length ? this.prisma.evaluationBulletin.count({ where: { inscriptionId: { in: ids }, element: lignes } }) : 0,
       this.prisma.lecon.count({ where: f }),
-      ids.length ? this.prisma.noteLecon.count({ where: { inscriptionId: { in: ids }, lecon: f } }) : 0,
       this.prisma.progressionLecon.count({ where: { salleId, lecon: f } }),
       bulletins,
     ]);
-    return { semestre: numero, effectif: ids.length, elements, attendues: elements * ids.length, saisies, suiviTotal: elements, suivi, bulletinsRediges: rediges };
+    return { semestre: numero, effectif: ids.length, elements, attendues: elements * ids.length, saisies, suiviTotal: nbLecons, suivi, bulletinsRediges: rediges };
   }
 
   async accueil(utilisateurId: number) {
@@ -112,7 +109,7 @@ export class EspaceEnseignantService {
           const ids = idsParNiveau.get(n.id) ?? [];
           const domaines = n.classe.cycle === 'prescolaire';
           const semestres = await this.prisma.semestre.findMany({ where: { niveauId: n.id }, orderBy: { numero: 'asc' }, select: { numero: true } });
-          const avancement = await Promise.all(semestres.map((s) => this.avancementSemestre(salle.id, n.id, domaines, s.numero, ids)));
+          const avancement = await Promise.all(semestres.map((s) => this.avancementSemestre(salle.id, n.id, domaines, s.numero, ids, annee.dateFin)));
           return { id: n.id, nom: n.nom, type: domaines ? ('domaines' as const) : ('lecons' as const), effectif: ids.length, avancement };
         }),
       ),

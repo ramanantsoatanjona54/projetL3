@@ -85,7 +85,7 @@ export default function Affectations() {
 
   return (
     <div>
-      <h1 className="mb-1 text-3xl font-semibold">Affectation des enseignants</h1>
+      <h1 className="mb-1 text-3xl font-semibold">Affectation des enseignantes</h1>
       <p className="mb-4 text-sm text-muted-foreground">
         {salles.length} salle(s) · {sallesAPourvoir === 0 ? 'toutes ont un enseignant' : `${sallesAPourvoir} sans enseignant`} · {sansSalle.length} enseignant(s) sans salle
       </p>
@@ -100,7 +100,7 @@ export default function Affectations() {
                   <h2 id={`salle-${s.id}`} className="text-xl font-semibold">Salle {s.nom}</h2>
                   <p className="text-sm text-muted-foreground">{s.inscrits} inscrit(s){s.anneeScolaire ? ` · ${s.anneeScolaire.libelle}` : ''}</p>
                 </div>
-                {s.enseignants.length === 0 && <Badge variant="outline" className="text-destructive">Sans enseignant</Badge>}
+                {s.enseignants.length === 0 && <Badge variant="outline" className="text-destructive">Sans enseignante</Badge>}
               </div>
               <div className="mt-2 flex flex-wrap gap-1">
                 {s.niveaux.map((n) => <Badge key={n.id} variant="secondary">{n.nom}</Badge>)}
@@ -126,9 +126,9 @@ export default function Affectations() {
         </div>
 
         <aside aria-labelledby="sans-salle" className="h-fit rounded-lg border border-border bg-card p-4">
-          <h2 id="sans-salle" className="mb-2 text-xl font-semibold">Enseignants sans salle</h2>
+          <h2 id="sans-salle" className="mb-2 text-xl font-semibold">Enseignantes sans salle</h2>
           {sansSalle.length === 0 ? (
-            <p className="text-muted-foreground">Tous les enseignants ont une salle.</p>
+            <p className="text-muted-foreground">Toutes les enseignantes ont une salle.</p>
           ) : (
             <ul className="space-y-2">
               {sansSalle.map((e) => (

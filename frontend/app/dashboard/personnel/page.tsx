@@ -150,7 +150,8 @@ export default function Personnel() {
             ) : affiches.map((p) => (
               <TableRow key={p.id}>
                 <TableCell>
-                  <span className="font-medium">{nomComplet(p)}</span>
+                  <Link href={`/dashboard/personnel/${p.id}`} className="font-medium underline-offset-4 hover:underline">{nomComplet(p)}</Link>
+                  {p.typePersonnel === 'CONSULTANT' && <Badge variant="outline" className="ml-2">Consultant</Badge>}
                   <span className="block text-sm text-muted-foreground">{p.matricule}</span>
                 </TableCell>
                 <TableCell>

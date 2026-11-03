@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { messageErreur } from '@/lib/messages';
-import { ar, nomMois } from '@/lib/format';
+import {nomMois } from '@/lib/format';
 import { nomComplet } from '@/lib/personnel';
 import { duree, moisCourant } from '@/lib/pointage';
 import type { RecapMois } from '@/lib/types';
@@ -55,12 +55,11 @@ export function RecapMensuel() {
               <TableHead className="text-right">Absences</TableHead>
               <TableHead className="text-right">Départs non pointés</TableHead>
               <TableHead className="text-right">Heures</TableHead>
-              <TableHead className="text-right">Indemnité de transport (indicative)</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {!donnees ? null : donnees.agents.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">Aucun agent en poste ce mois-ci.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="py-10 text-center text-muted-foreground">Aucun agent en poste ce mois-ci.</TableCell></TableRow>
             ) : donnees.agents.map((a) => (
               <TableRow key={a.id}>
                 <TableCell>
@@ -74,9 +73,6 @@ export function RecapMensuel() {
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{a.departsOublies}</TableCell>
                 <TableCell className="text-right tabular-nums">{duree(a.minutesTravaillees)}</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {a.indemniteTransport != null ? ar(a.indemniteTransport) : <span className="text-muted-foreground">Non renseignée</span>}
-                </TableCell>
               </TableRow>
             ))}
           </TableBody>

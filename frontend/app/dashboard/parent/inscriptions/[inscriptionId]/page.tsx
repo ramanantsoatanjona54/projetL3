@@ -52,10 +52,8 @@ export default function SituationEnfant() {
             <Alert role="status" className="mb-6"><AlertDescription>L&apos;année est entièrement réglée. Merci !</AlertDescription></Alert>
           )}
 
-          <dl className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                   <dl className="mb-8 grid gap-3 sm:grid-cols-2">
             <Chiffre libelle="Écolage mensuel" valeur={ar(s.montantMensuel)} detail={s.inscription.rangFratrie > 1 ? `Tarif fratrie (enfant n°${s.inscription.rangFratrie})` : undefined} />
-            <Chiffre libelle="Total payé" valeur={ar(s.totalPaye)} detail={`sur ${ar(s.totalAnnuel)}`} />
-            <Chiffre libelle="Reste à payer sur l'année" valeur={ar(s.resteAPayer)} />
             <Chiffre libelle="Pénalités de retard" valeur={ar(s.penalitesEnCours)} />
           </dl>
 

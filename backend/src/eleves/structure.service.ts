@@ -299,6 +299,7 @@ export class StructureService {
           anneeScolaireId: dto.anneeScolaireId,
           // "set" remplace entierement la liste des niveaux lies, plutot que d'ajouter
           niveaux: dto.niveauIds ? { set: dto.niveauIds.map((nid) => ({ id: nid })) } : undefined,
+          
         },
         include: { niveaux: true },
       });

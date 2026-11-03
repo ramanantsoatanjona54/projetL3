@@ -85,7 +85,7 @@ model Classe {
   cycle   String // "prescolaire" | "primaire_1" | "primaire_2" | "college"
   // Toutes les classes/niveaux sont evaluees en A/EA/AR (pas de "mode" a choisir) :
   // le cycle determine seulement le referentiel utilise (Domaine pour le prescolaire,
-  // Matiere/Lecon sinon) -- voir NoteCompetence / NoteLecon. L'Examen Blanc (notes /20)
+  // Matiere/Lecon sinon) -- voir ElementBulletin / EvaluationBulletin. L'Examen Blanc (notes /20)
   // est un dispositif a part, cible sur un Niveau precis (ExamenBlanc.niveauId),
   // pas un "mode" de classe entiere.
   niveaux Niveau[]
@@ -118,6 +118,7 @@ model Salle {
   progressions     ProgressionLecon[]
   programmesC1     ProgressionDomaine[]
   personnelAffecte Personnel[]
+  @@unique([nom, anneeScolaireId])
 }
 
 model Eleve {
@@ -169,8 +170,8 @@ model ParentEleve {
   eleveId     Int
   eleve       Eleve  @relation(fields: [eleveId], references: [id])
   lienParente String // "pere" | "mere" | "tuteur"
-
   @@unique([parentId, eleveId])
+  @@unique([eleveId, lienParente])
 }
 
 model Inscription {
@@ -187,9 +188,8 @@ model Inscription {
   statut          String           @default("en_attente") // en_attente | validee
   dateInscription DateTime         @default(now())
   paiements       Paiement[]
-  notesCompetence NoteCompetence[]
-  notesLecon      NoteLecon[]
   notesExamen     NoteExamen[]
+  evaluationsBulletin EvaluationBulletin[]
   bulletins       Bulletin[]
   absences        Absence[]
 
@@ -212,6 +212,9 @@ model Personnel {
   telephone              String?
   indemniteTransportJour Decimal?             @db.Decimal(10, 2)
   numeroCnaps            String?
+    typePersonnel          TypePersonnel        @default(SALARIE)
+  nif                    String?              @unique
+  numeroStatistique      String?              @unique
   poste                  String // enseignant, secretariat, comptable, directrice... (= "fonction")
   salleAffecteeId        Int? // emplacement / classe / salle habituelle (ex: titulaire de "1A")
   salleAffectee          Salle?               @relation(fields: [salleAffecteeId], references: [id])
@@ -227,9 +230,8 @@ model Personnel {
   pointages              Pointage[]
   enseigne               EnseignantMatiere[]
   emploisDuTemps         EmploiDuTemps[]
-  notesCompetence        NoteCompetence[]
-  notesLecon             NoteLecon[]
   notesExamen            NoteExamen[]
+  evaluationsBulletin    EvaluationBulletin[]
   progressions           ProgressionLecon[]
   progressionsC1         ProgressionDomaine[]
 }
@@ -281,6 +283,7 @@ model Semestre {
   niveau    Niveau     @relation(fields: [niveauId], references: [id])
   numero    Int // 1 ou 2
   ceintures Ceinture[]
+  elementsBulletin ElementBulletin[]
 
   @@unique([niveauId, numero])
 }
@@ -327,27 +330,13 @@ model Competence {
   sousDomaineId Int?
   sousDomaine   SousDomaine?     @relation(fields: [sousDomaineId], references: [id])
   libelle       String           @db.Text
-  notes         NoteCompetence[]
 }
 
 enum NiveauCompetence {
   A // Acquis
   EA // En cours d'Acquisition
   AR // A Renforcer
-}
-
-model NoteCompetence {
-  id            Int              @id @default(autoincrement())
-  inscriptionId Int
-  inscription   Inscription      @relation(fields: [inscriptionId], references: [id])
-  competenceId  Int
-  competence    Competence       @relation(fields: [competenceId], references: [id])
-  niveau        NiveauCompetence
-  enseignantId  Int
-  enseignant    Personnel        @relation(fields: [enseignantId], references: [id])
-  dateSaisie    DateTime         @default(now())
-
-  @@unique([inscriptionId, competenceId])
+  NA // Non acquis (colonne NA du bulletin)
 }
 
 // suivi "domaine vu / en cours" par salle, equivalent du Programme pour Classe 1
@@ -403,26 +392,6 @@ model Lecon {
   ceintureId   Int
   ceinture     Ceinture           @relation(fields: [ceintureId], references: [id])
   progressions ProgressionLecon[]
-  notes        NoteLecon[]
-}
-
-// Evaluation individuelle d'un eleve sur une lecon (A/EA/AR), pour Classe 2/3/college.
-// Equivalent de NoteCompetence pour le referentiel Matiere/Rubrique/Lecon.
-// A distinguer de ProgressionLecon : ProgressionLecon = "la lecon a ete enseignee
-// dans cette salle" (suivi collectif), NoteLecon = "cet eleve maitrise cette lecon"
-// (evaluation individuelle, alimente le bulletin).
-model NoteLecon {
-  id            Int              @id @default(autoincrement())
-  inscriptionId Int
-  inscription   Inscription      @relation(fields: [inscriptionId], references: [id])
-  leconId       Int
-  lecon         Lecon            @relation(fields: [leconId], references: [id])
-  niveau        NiveauCompetence
-  enseignantId  Int
-  enseignant    Personnel        @relation(fields: [enseignantId], references: [id])
-  dateSaisie    DateTime         @default(now())
-
-  @@unique([inscriptionId, leconId])
 }
 
 model ProgressionLecon {
@@ -464,7 +433,7 @@ model EnseignantMatiere {
 // plus tard sans changer le schema). Une session (numero 1 a 4...) regroupe
 // plusieurs disciplines, chacune avec SON PROPRE coefficient pour cette session
 // -- independant de MatiereCoefficient qui sert au reste de l'annee.
-// S'ajoute aux bulletins A/EA/AR habituels du niveau (NoteCompetence/NoteLecon),
+// S'ajoute aux bulletins A/EA/AR/NA habituels du niveau (EvaluationBulletin),
 // ne les remplace pas : un meme eleve a ses bulletins S1/S2 ET ses examens blancs.
 model ExamenBlanc {
   id              Int                     @id @default(autoincrement())
@@ -521,6 +490,48 @@ model Bulletin {
   datePublication      DateTime?
 
   @@unique([inscriptionId, periode])
+}
+
+// ---------- Contenu du bulletin (modifiable par l'administrateur) ----------
+// Un arbre par semestre de niveau : discipline > rubrique (facultative) > ligne a evaluer.
+// Independant du programme (Ceinture / Lecon / Competence), qui ne sert qu'au suivi "vu en classe".
+enum TypeElementBulletin {
+  DISCIPLINE
+  RUBRIQUE
+  LIGNE
+}
+
+model ElementBulletin {
+  id         Int                 @id @default(autoincrement())
+  semestreId Int
+  semestre   Semestre            @relation(fields: [semestreId], references: [id])
+  parentId   Int?
+  parent     ElementBulletin?    @relation("ArbreBulletin", fields: [parentId], references: [id], onDelete: Restrict)
+  enfants    ElementBulletin[]   @relation("ArbreBulletin")
+  type       TypeElementBulletin
+  libelle    String
+  ordre      Int                 @default(0)
+  creeLe     DateTime            @default(now())
+  archiveLe  DateTime? // archive : n'est plus exige pour les nouveaux bulletins, reste visible dans l'historique
+  evaluations EvaluationBulletin[]
+
+  @@unique([semestreId, parentId, libelle])
+  @@index([semestreId, parentId])
+}
+
+model EvaluationBulletin {
+  id            Int              @id @default(autoincrement())
+  inscriptionId Int
+  inscription   Inscription      @relation(fields: [inscriptionId], references: [id])
+  elementId     Int
+  element       ElementBulletin  @relation(fields: [elementId], references: [id])
+  niveau        NiveauCompetence
+  enseignantId  Int
+  enseignant    Personnel        @relation(fields: [enseignantId], references: [id])
+  dateSaisie    DateTime         @default(now())
+
+  @@unique([inscriptionId, elementId])
+  @@index([elementId])
 }
 
 // ============================================================
@@ -697,6 +708,7 @@ enum RoleUtilisateur {
   COMPTABLE
   DIRECTRICE
   PARENT
+  EDUCATEUR
 }
 
 model Utilisateur {
@@ -762,3 +774,8 @@ model CodeSecours {
 
   @@index([utilisateurId, utilise])
 }
+enum TypePersonnel {
+  SALARIE
+  CONSULTANT
+}
+

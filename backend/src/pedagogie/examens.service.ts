@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, RoleUtilisateur } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreerExamenDto, DisciplineExamenDto, ModifierExamenDto, SaisirNotesExamenDto } from './dto/examens.dto';
+import { CreerExamenDto, CreerMatiereDto, DisciplineExamenDto, ModifierExamenDto, SaisirNotesExamenDto } from './dto/examens.dto';
 import type { Acteur } from './evaluations.service';
 
 // Seul ce niveau a des examens blancs (Classe 3, niveau 3)
@@ -11,6 +11,8 @@ const enJour = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 const valide = (iso: string) => /^\d{4}-\d{2}-\d{2}$/.test(iso) && enJour(iso).toISOString().slice(0, 10) === iso;
 const aujourdhui = () => new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10); // Madagascar UTC+3
 const iso = (d: Date) => d.toISOString().slice(0, 10);
+const normaliser = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+const NON_PROPOSEES = new Set(['eveil', 'calcul']);
 
 // Moyenne pondérée sur les disciplines notées, sans rang
 export function moyennePonderee(disciplines: { id: number; coefficient: number }[], notes: Map<number, number>) {
@@ -98,8 +100,23 @@ export class ExamensService {
     };
   }
 
-  matieres() {
-    return this.prisma.matiere.findMany({ orderBy: { nom: 'asc' }, select: { id: true, nom: true } });
+  // Disciplines proposées pour un examen : « Éveil » et « Calcul » (programme de classe) n'en font pas partie
+  async matieres() {
+    const toutes = await this.prisma.matiere.findMany({ orderBy: { nom: 'asc' }, select: { id: true, nom: true } });
+    return toutes.filter((m) => !NON_PROPOSEES.has(normaliser(m.nom)));
+  }
+
+  async creerMatiere(acteur: Acteur, dto: CreerMatiereDto) {
+    const nom = dto.nom.trim().replace(/\s+/g, ' ');
+    const cle = normaliser(nom);
+    const existantes = await this.prisma.matiere.findMany({ select: { nom: true } });
+    if (existantes.some((m) => normaliser(m.nom) === cle)) throw new ConflictException(`La discipline « ${nom} » existe déjà.`);
+    if (NON_PROPOSEES.has(cle)) throw new BadRequestException(`« ${nom} » n'est pas une discipline d'examen blanc.`);
+    return this.prisma.$transaction(async (tx) => {
+      const creee = await tx.matiere.create({ data: { nom }, select: { id: true, nom: true } });
+      await tx.journalAudit.create({ data: { utilisateurId: acteur.id, action: 'DISCIPLINE_CREEE', entite: 'Matiere', entiteId: creee.id, details: { nom } } });
+      return creee;
+    });
   }
 
   async salles(acteur: Acteur) {

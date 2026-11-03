@@ -6,7 +6,9 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import { messageErreur } from '@/lib/messages';
-import type { Bulletin, HistoriqueBulletins } from '@/lib/types';
+import type { HistoriqueBulletins } from '@/lib/types';
+import type { BulletinDetail, ExamenDocument, ExamenIndex } from '@/lib/bulletin-types';
+import { ExamenVue } from '@/components/bulletins/ExamenVue';
 import { BulletinVue } from '@/components/bulletins/BulletinVue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -18,7 +20,10 @@ export default function PageBulletinsParent() {
   const { utilisateur } = useAuth();
   const [histo, setHisto] = useState<HistoriqueBulletins | null>(null);
   const [choix, setChoix] = useState<Choix | null>(null);
-  const [b, setB] = useState<Bulletin | null>(null);
+  const [b, setB] = useState<BulletinDetail | null>(null);
+  const [examens, setExamens] = useState<ExamenIndex[]>([]);
+  const [exChoisi, setExChoisi] = useState<number | null>(null);
+  const [ex, setEx] = useState<ExamenDocument | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
 
   useEffect(() => {
@@ -34,9 +39,23 @@ export default function PageBulletinsParent() {
   }, [inscriptionId]);
 
   useEffect(() => {
+    api.get<ExamenIndex[]>(`/parent/inscriptions/${inscriptionId}/bulletins/examens`)
+      .then(setExamens)
+      .catch((e) => setErreur(messageErreur(e)));
+  }, [inscriptionId]);
+
+  useEffect(() => {
+    setEx(null);
+    if (exChoisi === null) return;
+    api.get<ExamenDocument>(`/parent/inscriptions/${inscriptionId}/bulletins/examens/${exChoisi}`)
+      .then((r) => { setEx(r); setErreur(null); })
+      .catch((e) => setErreur(messageErreur(e)));
+  }, [inscriptionId, exChoisi]);
+
+  useEffect(() => {
     if (!choix) return;
     setB(null);
-    api.get<Bulletin>(`/parent/inscriptions/${choix.inscriptionId}/bulletins/${choix.semestre}`)
+    api.get<BulletinDetail>(`/parent/inscriptions/${choix.inscriptionId}/bulletins/${choix.semestre}`)
       .then((r) => { setB(r); setErreur(null); })
       .catch((e) => setErreur(messageErreur(e)));
   }, [choix]);
@@ -53,7 +72,7 @@ export default function PageBulletinsParent() {
         <p className="mb-4 text-sm text-muted-foreground">Seuls les bulletins publiés par l&apos;école sont affichés.</p>
 
         {erreur && <Alert variant="destructive" role="alert" className="mb-4"><AlertDescription>{erreur}</AlertDescription></Alert>}
-        {histo && histo.inscriptions.length === 0 && (
+        {histo && histo.inscriptions.length === 0 && examens.length === 0 && (
           <Alert role="status"><AlertDescription>Aucun bulletin n&apos;est publié pour le moment. Vous serez prévenu(e) dès que l&apos;école le mettra à disposition.</AlertDescription></Alert>
         )}
 
@@ -64,10 +83,10 @@ export default function PageBulletinsParent() {
                 <p className="mb-1 text-sm font-medium">{i.annee} · {i.niveau}</p>
                 <div className="flex flex-wrap gap-2">
                   {i.semestres.map((s) => {
-                    const actif = choix?.inscriptionId === i.inscriptionId && choix.semestre === s.semestre;
+                    const actif = exChoisi === null && choix?.inscriptionId === i.inscriptionId && choix.semestre === s.semestre;
                     return (
                       <Button key={s.semestre} variant={actif ? 'default' : 'outline'} aria-pressed={actif}
-                        onClick={() => setChoix({ inscriptionId: i.inscriptionId, semestre: s.semestre })}>
+                        onClick={() => { setExChoisi(null); setChoix({ inscriptionId: i.inscriptionId, semestre: s.semestre }); }}>
                         Semestre {s.semestre}
                       </Button>
                     );
@@ -75,11 +94,26 @@ export default function PageBulletinsParent() {
                 </div>
               </div>
             ))}
-            <Button variant="outline" onClick={() => window.print()} disabled={!b}>Imprimer ce bulletin</Button>
           </div>
         )}
+
+        {examens.length > 0 && (
+          <div className="mb-4" role="group" aria-label="Examens blancs">
+            <p className="mb-1 text-sm font-medium">Examens blancs</p>
+            <div className="flex flex-wrap gap-2">
+              {examens.map((x) => (
+                <Button key={x.numero} variant={exChoisi === x.numero ? 'default' : 'outline'} aria-pressed={exChoisi === x.numero} onClick={() => setExChoisi(x.numero)}>
+                  Examen n°{x.numero}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+        {(histo?.inscriptions.length ?? 0) + examens.length > 0 && (
+          <Button variant="outline" className="mb-4" onClick={() => window.print()} disabled={exChoisi !== null ? !ex : !b}>Imprimer ce document</Button>
+        )}
       </div>
-      {b && <BulletinVue b={b} />}
+      {exChoisi !== null ? (ex && <ExamenVue d={ex} />) : b && <BulletinVue b={b} />}
     </div>
   );
 }

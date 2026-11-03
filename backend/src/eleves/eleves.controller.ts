@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Patch , Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Patch, Req, UseGuards } from '@nestjs/common';
 import { ElevesService } from './eleves.service';
 import { CreateEleveDto } from './dto/create-eleve.dto';
 import { AjouterParentDto } from './dto/ajouter-parent.dto';
@@ -39,7 +39,19 @@ export class ElevesController {
   ajouterParent(@Param('id', ParseIntPipe) id: number, @Body() dto: AjouterParentDto) {
     return this.service.ajouterParent(id, dto);
   }
-    @Patch(':id')
+
+  // Retrait d'un responsable : réservé à l'administrateur
+  @Delete(':id/parents/:parentId')
+  @Roles(RoleUtilisateur.ADMIN)
+  @Audit('PARENT_RETIRE_ELEVE', 'Eleve')
+  retirerParent(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('parentId', ParseIntPipe) parentId: number,
+  ) {
+    return this.service.retirerParent(id, parentId);
+  }
+
+  @Patch(':id')
   @Roles(RoleUtilisateur.ADMIN, RoleUtilisateur.SECRETARIAT)
   modifier(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateEleveDto, @Req() req: any) {
     return this.service.modifierEleve(id, dto, req.user?.id);

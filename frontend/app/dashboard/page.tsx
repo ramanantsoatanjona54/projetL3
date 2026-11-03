@@ -2,6 +2,7 @@
 
 import { ReactNode, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { messageErreur } from '@/lib/messages';
@@ -17,7 +18,7 @@ import { useActualisationAuto } from '@/lib/useActualisationAuto';
 
 const LIBELLES_ROLE: Record<string, string> = {
   ADMIN: 'Administrateur', ENSEIGNANT: 'Enseignant', SECRETARIAT: 'Secrétariat',
-  COMPTABLE: 'Comptable', DIRECTRICE: 'Directrice', PARENT: 'Parent',
+  COMPTABLE: 'Comptable', DIRECTRICE: 'Directrice', PARENT: 'Parent', EDUCATEUR: 'Éducateur spécialisé',
 };
 
 function Tuile({ href, libelle, valeur, detail, alerte }: {
@@ -52,12 +53,17 @@ function Section({ titre, lien, children }: { titre: string; lien?: { href: stri
 
 export default function Accueil() {
   const { utilisateur } = useAuth();
+  const routeur = useRouter();
   const role = utilisateur?.role;
   const [d, setD] = useState<TableauDeBord | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (utilisateur?.role === 'EDUCATEUR') routeur.replace('/dashboard/rendez-vous');
+  }, [utilisateur, routeur]);
+
   const charger = useCallback(() => {
-    if (!role || role === 'PARENT') return;
+    if (!role || role === 'PARENT' || role === 'EDUCATEUR') return;
     api.get<TableauDeBord>('/tableau-de-bord')
       .then((r) => { setD(r); setErreur(null); })
       .catch((e) => setErreur(messageErreur(e)));
@@ -66,7 +72,7 @@ export default function Accueil() {
   useEffect(() => { charger(); }, [charger]);
   useActualisationAuto(charger);
 
-  if (!role || role === 'PARENT') return null; // le parent est redirigé vers son espace
+  if (!role || role === 'PARENT' || role === 'EDUCATEUR') return null; // redirigés vers leur espace
 
   const maxSalle = Math.max(1, ...(d?.eleves?.parSalle.map((s) => s.effectif) ?? [1]));
 
@@ -132,8 +138,7 @@ export default function Accueil() {
 
           {role === 'SECRETARIAT' && (
             <div className="mt-6 flex flex-wrap gap-3">
-              <Link href="/dashboard/eleves/nouveau" className={buttonVariants({ size: 'lg' })}>Nouvel élève</Link>
-              <Link href="/dashboard/inscriptions" className={buttonVariants({ size: 'lg', variant: 'outline' })}>File des inscriptions</Link>
+              <Link href="/dashboard/inscriptions" className={buttonVariants({ size: 'lg' })}>File des inscriptions</Link>
             </div>
           )}
 

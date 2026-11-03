@@ -8,14 +8,18 @@ type Props = {
 
 export function Logo({ taille = 36, decoratif = false, priorite = false }: Props) {
   return (
-    <Image
-      src="/logo.png"
-      alt={decoratif ? '' : 'Les Colibris'}
-      width={taille}
-      height={taille}
-      priority={priorite}
+    <span
+      className="relative inline-block shrink-0 overflow-hidden rounded-full bg-white"
       style={{ width: taille, height: taille }}
-      className="shrink-0 rounded-full bg-white object-cover"
-    />
+    >
+      <Image
+        src="/logo.png"
+        alt={decoratif ? '' : 'Les Colibris'}
+        fill
+        sizes={`${taille}px`}
+        priority={priorite}
+        className="object-cover"
+      />
+    </span>
   );
 }

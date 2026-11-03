@@ -7,11 +7,11 @@ import { RaisonDto } from './dto/relation-parents.dto';
 import { RendezVousService } from './rendez-vous.service';
 import type { FiltresRdv } from './rendez-vous.service';
 import { Audit } from '../audit/audit.decorator';
-const { ADMIN, DIRECTRICE, SECRETARIAT, ENSEIGNANT } = RoleUtilisateur;
+const { DIRECTRICE, EDUCATEUR } = RoleUtilisateur;
 
 @Controller('rendez-vous')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles( DIRECTRICE, SECRETARIAT)
+@Roles( DIRECTRICE, EDUCATEUR)
 export class RendezVousController {
   constructor(private readonly service: RendezVousService) {}
 

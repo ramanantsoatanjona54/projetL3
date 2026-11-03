@@ -18,7 +18,7 @@ function CarteEnfant({ e }: { e: EnfantParent }) {
   const anciennes = e.inscriptions.filter((i) => i !== courante && i.statut === 'validee');
   const r = courante?.resume ?? null;
   const aRegler = r ? r.exigible + r.penalitesEnCours : 0;
-  const pourcentage = r && r.totalAnnuel > 0 ? Math.min(100, Math.round((r.totalPaye / r.totalAnnuel) * 100)) : 0;
+  
 
   return (
     <Card>
@@ -71,17 +71,6 @@ function CarteEnfant({ e }: { e: EnfantParent }) {
                   </p>
                 )}
 
-                <div>
-                  <div
-                    role="progressbar" aria-label={`Écolage payé pour ${e.prenom}`} aria-valuemin={0} aria-valuemax={100}
-                    aria-valuenow={pourcentage} className="h-2 overflow-hidden rounded-full bg-muted"
-                  >
-                    <div className="h-full bg-primary" style={{ width: `${pourcentage}%` }} />
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {ar(r.totalPaye)} payés sur {ar(r.totalAnnuel)} cette année ({pourcentage} %)
-                  </p>
-                </div>
               </div>
             )}
 
@@ -99,6 +88,9 @@ function CarteEnfant({ e }: { e: EnfantParent }) {
                 <Link href={`/dashboard/parent/inscriptions/${courante.id}/bulletins`} className={buttonVariants({ size: 'lg', variant: 'outline' })}>
   Bulletins
 </Link>
+                <Link href={`/dashboard/parent/inscriptions/${courante.id}/progression`} className={buttonVariants({ size: 'lg', variant: 'outline' })}>
+                  Progression
+                </Link>
               </div>
             )}
           </>

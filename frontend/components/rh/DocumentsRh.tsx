@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { lireErreurHttp } from '@/lib/communication';
+import { erreurNom, saisieNom } from '@/lib/validation';
 import { ModaleCrud } from '@/components/structure/ModaleCrud';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -26,12 +27,12 @@ const VIDE: Formulaire = {
   dateEffet: '', salaireBase: '', anciennete: '0', natureContrat: 'CDI',
 };
 
-function Champ(props: { id: string; label: string; valeur: string; onChange: (v: string) => void; type?: string; aide?: string; requis?: boolean }) {
+function Champ(props: { id: string; label: string; valeur: string; onChange: (v: string) => void; type?: string; aide?: string; requis?: boolean; lettres?: boolean }) {
   return (
     <div className="space-y-1.5">
       <Label htmlFor={props.id} className="text-base">{props.label}{props.requis ? ' *' : ''}</Label>
       <Input
-        id={props.id} type={props.type ?? 'text'} value={props.valeur} onChange={(e) => props.onChange(e.target.value)}
+        id={props.id} type={props.type ?? 'text'} value={props.valeur} onChange={(e) => props.onChange(props.lettres ? saisieNom(e.target.value) : e.target.value)}
         className="h-11 text-base" aria-describedby={props.aide ? `${props.id}-aide` : undefined}
         inputMode={props.type === 'number' ? 'numeric' : undefined} min={props.type === 'number' ? 0 : undefined}
       />
@@ -57,6 +58,9 @@ export function DocumentsRh({ personnelId, nomAgent }: { personnelId: number; no
     setErreur(null);
     const corps: Record<string, unknown> = {};
     const texte = (k: keyof Formulaire) => { const v = f[k].trim(); if (v) corps[k] = v; };
+    const mauvais = erreurNom(f.lieuNaissance, 'Le lieu de naissance', false)
+      ?? (modele === 'contrat' ? erreurNom(f.pere, 'Le nom du père', false) ?? erreurNom(f.mere, 'Le nom de la mère', false) : null);
+    if (mauvais) { setErreur(mauvais); return; }
     texte('lieuNaissance');
     if (modele === 'contrat') { texte('pere'); texte('mere'); texte('classification'); }
     if (modele === 'avenant') texte('cinDelivrance');
@@ -135,14 +139,14 @@ export function DocumentsRh({ personnelId, nomAgent }: { personnelId: number; no
           {modele === 'contrat' && (
             <Champ id="dr-classif" label="Classification" valeur={f.classification} onChange={maj('classification')} requis aide="Exemple : 4B." />
           )}
-          <Champ id="dr-lieu" label="Lieu de naissance" valeur={f.lieuNaissance} onChange={maj('lieuNaissance')} aide="Facultatif : omis du document s’il est vide." />
+          <Champ id="dr-lieu" label="Lieu de naissance" valeur={f.lieuNaissance} onChange={maj('lieuNaissance')} lettres aide="Facultatif : omis du document s’il est vide." />
           {modele === 'avenant' && (
             <Champ id="dr-cin" label="Délivrance de la CIN" valeur={f.cinDelivrance} onChange={maj('cinDelivrance')} aide="Exemple : délivrée à Antananarivo I le 21 mai 1986." />
           )}
           {modele === 'contrat' && (
             <>
-              <Champ id="dr-pere" label="Père" valeur={f.pere} onChange={maj('pere')} />
-              <Champ id="dr-mere" label="Mère" valeur={f.mere} onChange={maj('mere')} />
+              <Champ id="dr-pere" label="Père" valeur={f.pere} onChange={maj('pere')} lettres />
+              <Champ id="dr-mere" label="Mère" valeur={f.mere} onChange={maj('mere')} lettres />
             </>
           )}
           {modele === 'attestation' && (

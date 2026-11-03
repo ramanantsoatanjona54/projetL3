@@ -1,4 +1,4 @@
-import { IsInt, IsISO8601, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsInt, IsISO8601, IsOptional, Matches } from 'class-validator';
 
 export class CorrigerPointageDto {
   @IsOptional() @IsISO8601()
@@ -7,9 +7,6 @@ export class CorrigerPointageDto {
   // null = effacer l'heure de départ
   @IsOptional() @IsISO8601()
   heureDepart?: string | null;
-
-  @IsString() @MinLength(5) @MaxLength(200)
-  motif: string;
 }
 
 export class CreerPointageManuelDto {
@@ -24,12 +21,7 @@ export class CreerPointageManuelDto {
 
   @IsOptional() @IsISO8601()
   heureDepart?: string;
-
-  @IsString() @MinLength(5) @MaxLength(200)
-  motif: string;
 }
 
-export class AnnulerPointageDto {
-  @IsString() @MinLength(5) @MaxLength(200)
-  motif: string;
-}
+// L'annulation ne demande plus de motif : la trace (qui, quand, quelles heures) est dans le journal.
+export class AnnulerPointageDto {}

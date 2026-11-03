@@ -4,6 +4,7 @@ import { useState, FormEvent } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { traduireErreursServeur } from '@/lib/erreurs';
 import type { ParentEleve } from '@/lib/types';
+import { erreurNom, erreurTelephone, saisieNom, saisieTelephone } from '@/lib/validation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,18 +16,32 @@ const VIDE = { nom: '', prenom: '', telephone: '', email: '', lienParente: '' };
 const LIBELLES: Record<string, string> = {
   nom: 'Le nom', prenom: 'Le prénom', telephone: 'Le téléphone', email: "L'email", lienParente: 'Le lien de parenté',
 };
+const LIENS = [
+  { valeur: 'pere', libelle: 'Père' },
+  { valeur: 'mere', libelle: 'Mère' },
+  { valeur: 'tuteur', libelle: 'Tuteur' },
+];
 
 export interface ResultatAjout {
   rattache: ParentEleve;
   saisie: typeof VIDE;
 }
 
-export function AjouterParent({ eleveId, onAjoute }: { eleveId: number; onAjoute: (r: ResultatAjout) => void }) {
+interface Props {
+  eleveId: number;
+  onAjoute: (r: ResultatAjout) => void;
+  /** Natures de lien déjà enregistrées pour cet élève (ex. ['pere', 'mere']) */
+  liensPris?: string[];
+}
+
+export function AjouterParent({ eleveId, onAjoute, liensPris = [] }: Props) {
   const [ouvert, setOuvert] = useState(false);
   const [f, setF] = useState(VIDE);
   const [erreurs, setErreurs] = useState<Record<string, string>>({});
   const [generale, setGenerale] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
+
+  const complet = liensPris.length >= LIENS.length;
 
   const set = (k: keyof typeof VIDE, v: string) => {
     setF((p) => ({ ...p, [k]: v }));
@@ -36,9 +51,9 @@ export function AjouterParent({ eleveId, onAjoute }: { eleveId: number; onAjoute
 
   function valider() {
     const e: Record<string, string> = {};
-    if (!f.nom.trim()) e.nom = 'Le nom est obligatoire.';
-    if (!f.prenom.trim()) e.prenom = 'Le prénom est obligatoire.';
-    if (!f.telephone.trim()) e.telephone = 'Le téléphone est obligatoire.';
+    const n = erreurNom(f.nom, 'Le nom'); if (n) e.nom = n;
+    const p = erreurNom(f.prenom, 'Le prénom'); if (p) e.prenom = p;
+    const t = erreurTelephone(f.telephone, true); if (t) e.telephone = t;
     if (!f.lienParente) e.lienParente = 'Choisissez le lien de parenté.';
     if (f.email && !/^\S+@\S+\.\S+$/.test(f.email)) e.email = 'Adresse email invalide.';
     return e;
@@ -71,6 +86,10 @@ export function AjouterParent({ eleveId, onAjoute }: { eleveId: number; onAjoute
     }
   }
 
+  // Filtre appliqué à la frappe : lettres seulement pour les noms, chiffres seulement pour le téléphone
+  const filtre = (id: keyof typeof VIDE, v: string) =>
+    id === 'nom' || id === 'prenom' ? saisieNom(v) : id === 'telephone' ? saisieTelephone(v) : v;
+
   const champ = (id: keyof typeof VIDE, label: string, type = 'text') => (
     <div className="space-y-1.5">
       <Label htmlFor={`p-${id}`} className="text-base">{label}</Label>
@@ -78,7 +97,9 @@ export function AjouterParent({ eleveId, onAjoute }: { eleveId: number; onAjoute
         id={`p-${id}`}
         type={type}
         value={f[id]}
-        onChange={(e) => set(id, e.target.value)}
+        onChange={(e) => set(id, filtre(id, e.target.value))}
+        inputMode={id === 'telephone' ? 'numeric' : undefined}
+        maxLength={id === 'telephone' ? 14 : id === 'nom' || id === 'prenom' ? 100 : undefined}
         className="h-11 text-base"
         aria-invalid={!!erreurs[id]}
         aria-describedby={erreurs[id] ? `p-${id}-erreur` : undefined}
@@ -89,13 +110,21 @@ export function AjouterParent({ eleveId, onAjoute }: { eleveId: number; onAjoute
 
   return (
     <Dialog open={ouvert} onOpenChange={setOuvert}>
-      <DialogTrigger asChild><Button variant="outline">Ajouter un parent</Button></DialogTrigger>
+      <DialogTrigger asChild>
+        <Button
+          variant="outline"
+          disabled={complet}
+          title={complet ? 'Maximum atteint : un père, une mère et un tuteur' : undefined}
+        >
+          Ajouter un parent
+        </Button>
+      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Ajouter un parent ou tuteur</DialogTitle>
           <DialogDescription>
-            Si ce numéro de téléphone est déjà enregistré pour un autre enfant, le parent existant est réutilisé
-            (pas de doublon dans les fratries).
+            Un élève a au plus 3 responsables : un père, une mère et un tuteur. Si ce numéro de téléphone est déjà
+            enregistré pour un autre enfant, le parent existant est réutilisé (pas de doublon dans les fratries).
           </DialogDescription>
         </DialogHeader>
 
@@ -105,7 +134,7 @@ export function AjouterParent({ eleveId, onAjoute }: { eleveId: number; onAjoute
             {champ('nom', 'Nom *')}
             {champ('prenom', 'Prénom *')}
           </div>
-          {champ('telephone', 'Téléphone *', 'tel')}
+          {champ('telephone', 'Téléphone * (10 chiffres)', 'tel')}
           {champ('email', 'Email', 'email')}
           <div className="space-y-1.5">
             <Label htmlFor="p-lien" className="text-base">Lien de parenté *</Label>
@@ -114,9 +143,14 @@ export function AjouterParent({ eleveId, onAjoute }: { eleveId: number; onAjoute
                 <SelectValue placeholder="Choisir" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="pere">Père</SelectItem>
-                <SelectItem value="mere">Mère</SelectItem>
-                <SelectItem value="tuteur">Tuteur</SelectItem>
+                {LIENS.map((l) => {
+                  const pris = liensPris.includes(l.valeur);
+                  return (
+                    <SelectItem key={l.valeur} value={l.valeur} disabled={pris}>
+                      {l.libelle}{pris ? ' (déjà enregistré)' : ''}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
             {erreurs.lienParente && <p className="text-sm text-destructive">{erreurs.lienParente}</p>}

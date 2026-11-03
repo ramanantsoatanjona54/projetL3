@@ -145,7 +145,7 @@ export class PointageService {
     return this.exiger(pointageId);
   }
 
-  // ---------- Corrections (ADMIN, motif obligatoire, journalisées) ----------
+  // ---------- Corrections (ADMIN, sans motif, toujours journalisées) ----------
 
   async corriger(id: number, dto: CorrigerPointageDto, adminId?: number) {
     const pt = await this.exiger(id);
@@ -163,7 +163,7 @@ export class PointageService {
         data: {
           utilisateurId: adminId, action: 'POINTAGE_CORRIGE', entite: 'Pointage', entiteId: id,
           details: {
-            personnelId: pt.personnelId, date: iso, motif: dto.motif.trim(),
+            personnelId: pt.personnelId, date: iso,
             avant: { arrivee: pt.heureArrivee?.toISOString() ?? null, depart: pt.heureDepart?.toISOString() ?? null },
             apres: { arrivee: arrivee.toISOString(), depart: depart?.toISOString() ?? null },
           },
@@ -196,7 +196,10 @@ export class PointageService {
         await tx.journalAudit.create({
           data: {
             utilisateurId: adminId, action: 'POINTAGE_SAISI_MANUELLEMENT', entite: 'Pointage', entiteId: pt.id,
-            details: { personnelId: dto.personnelId, date: iso, motif: dto.motif.trim() },
+            details: {
+              personnelId: dto.personnelId, date: iso,
+              arrivee: arrivee.toISOString(), depart: depart?.toISOString() ?? null,
+            },
           },
         });
         return pt;
@@ -209,7 +212,7 @@ export class PointageService {
     }
   }
 
-  async annuler(id: number, dto: AnnulerPointageDto, adminId?: number) {
+  async annuler(id: number, _dto: AnnulerPointageDto, adminId?: number) {
     const pt = await this.exiger(id);
     await this.prisma.$transaction([
       this.prisma.pointage.delete({ where: { id } }),
@@ -217,7 +220,7 @@ export class PointageService {
         data: {
           utilisateurId: adminId, action: 'POINTAGE_ANNULE', entite: 'Pointage', entiteId: id,
           details: {
-            personnelId: pt.personnelId, date: pt.date.toISOString().slice(0, 10), motif: dto.motif.trim(),
+            personnelId: pt.personnelId, date: pt.date.toISOString().slice(0, 10),
             arrivee: pt.heureArrivee?.toISOString() ?? null, depart: pt.heureDepart?.toISOString() ?? null,
           },
         },
@@ -230,7 +233,7 @@ export class PointageService {
 
   private dejaPointe(arrivee: Date | null) {
     return new ConflictException(
-      arrivee ? `Arrivée déjà enregistrée à ${heureLocale(arrivee)}.` : 'Cet agent est déjà pointé aujourd\'hui.',
+      arrivee ? `Arrivée déjà enregistrée à ${heureLocale(arrivee)}.` : "Cet agent est déjà pointé aujourd'hui.",
     );
   }
 
@@ -267,7 +270,7 @@ export class PointageService {
       throw new BadRequestException("Cet agent n'est pas encore embauché à cette date.");
     }
     if (p.dateDepart && p.dateDepart < jour) {
-      throw new BadRequestException('Cet agent a quitté l\'école avant cette date.');
+      throw new BadRequestException("Cet agent a quitté l'école avant cette date.");
     }
     return p;
   }

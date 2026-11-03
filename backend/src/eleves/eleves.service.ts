@@ -1,14 +1,24 @@
-import { Injectable, NotFoundException, ConflictException , BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEleveDto } from './dto/create-eleve.dto';
 import { Prisma } from '@prisma/client';
 import { UpdateEleveDto } from './dto/update-eleve.dto';
+
+// Un élève a au plus 3 responsables : un père, une mère, un tuteur
+const MAX_RESPONSABLES = 3;
+const NOM_LIEN: Record<string, string> = { pere: 'père', mere: 'mère', tuteur: 'tuteur' };
+
 @Injectable()
 export class ElevesService {
   constructor(private readonly prisma: PrismaService) {}
 
-   private normaliser(s: string): string {
+  private normaliser(s: string): string {
     return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim().replace(/\s+/g, ' ');
+  }
+
+  // Ne garde que les chiffres : "034 12 345 67" et "0341234567" sont le même numéro
+  private chiffres(s?: string | null): string {
+    return (s ?? '').replace(/\D/g, '');
   }
 
   // Prend le plus grand numéro de l'année et ajoute 1 (le count() se trompait après une suppression)
@@ -95,35 +105,124 @@ export class ElevesService {
   // ses informations (nom/téléphone/email) à chaque nouvel enfant. Sinon, crée
   // un nouveau Parent. Dans les deux cas, relie ensuite ce Parent à l'élève via
   // ParentEleve (table de jonction), avec la nature du lien (père/mère/tuteur).
+  //
+  // Règles : 3 responsables au maximum, un seul par nature de lien (un père, une mère, un tuteur).
   async ajouterParent(
     eleveId: number,
     data: { nom: string; prenom: string; telephone: string; email?: string; lienParente: string },
   ) {
-    const eleve = await this.prisma.eleve.findUnique({ where: { id: eleveId } });
+    const eleve = await this.prisma.eleve.findUnique({
+      where: { id: eleveId },
+      include: { parents: true },
+    });
     if (!eleve) {
       throw new NotFoundException(`Élève #${eleveId} introuvable`);
     }
+    if (eleve.parents.length >= MAX_RESPONSABLES) {
+      throw new ConflictException(
+        'Cet élève a déjà 3 responsables (père, mère, tuteur). Retirez-en un avant d\'en ajouter un autre.',
+      );
+    }
+    if (eleve.parents.some((l) => l.lienParente === data.lienParente)) {
+      throw new ConflictException(
+        `Cet élève a déjà un ${NOM_LIEN[data.lienParente] ?? data.lienParente} enregistré. ` +
+          'Retirez-le d\'abord si vous voulez le remplacer.',
+      );
+    }
 
-    let parent = await this.prisma.parent.findFirst({ where: { telephone: data.telephone } });
-    if (!parent) {
-      parent = await this.prisma.parent.create({
-        data: { nom: data.nom, prenom: data.prenom, telephone: data.telephone, email: data.email },
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        let parent = await tx.parent.findFirst({ where: { telephone: data.telephone } });
+        if (!parent) {
+          parent = await tx.parent.create({
+            data: { nom: data.nom, prenom: data.prenom, telephone: data.telephone, email: data.email },
+          });
+        }
+
+        if (eleve.parents.some((l) => l.parentId === parent!.id)) {
+          throw new ConflictException('Ce parent est déjà associé à cet élève');
+        }
+
+        const lien = await tx.parentEleve.create({
+          data: { parentId: parent.id, eleveId, lienParente: data.lienParente },
+          include: { parent: true },
+        });
+
+        // Premier responsable ajouté : son numéro devient le contact de la famille
+        if (!eleve.telephone) {
+          await tx.eleve.update({ where: { id: eleveId }, data: { telephone: parent.telephone } });
+        }
+        return lien;
       });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new ConflictException(
+          'Ce responsable vient d\'être ajouté par un autre utilisateur. Actualisez la fiche et réessayez.',
+        );
+      }
+      throw e;
     }
-
-    const dejaLie = await this.prisma.parentEleve.findUnique({
-      where: { parentId_eleveId: { parentId: parent.id, eleveId } },
-    });
-    if (dejaLie) {
-      throw new ConflictException('Ce parent est déjà associé à cet élève');
-    }
-
-    return this.prisma.parentEleve.create({
-      data: { parentId: parent.id, eleveId, lienParente: data.lienParente },
-      include: { parent: true },
-    });
   }
-    private readonly CHAMPS_DATE = ['dateNaissance', 'dateInscription', 'assuranceExpiration'];
+
+  // Retire le lien entre un parent et un élève (le parent lui-même est conservé s'il a
+  // un compte, d'autres enfants, des remarques ou des rendez-vous). Réservé à l'administrateur.
+  // Conséquence : un parent retiré perd l'accès à cet enfant dans son espace.
+  async retirerParent(eleveId: number, parentId: number) {
+    const lien = await this.prisma.parentEleve.findUnique({
+      where: { parentId_eleveId: { parentId, eleveId } },
+      include: { parent: true, eleve: { select: { telephone: true } } },
+    });
+    if (!lien) throw new NotFoundException('Ce parent n\'est pas associé à cet élève.');
+
+    const contact = this.chiffres(lien.eleve.telephone);
+    if (contact && contact === this.chiffres(lien.parent.telephone)) {
+      throw new ConflictException(
+        'Ce numéro est le contact de la famille de cet élève. Modifiez d\'abord le contact de la famille ' +
+          '(fiche élève, bouton Modifier), puis retirez ce responsable.',
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.parentEleve.delete({ where: { parentId_eleveId: { parentId, eleveId } } });
+
+      // Évite de laisser un parent orphelin (sans enfant, sans compte, sans historique)
+      const reste = await tx.parent.findUnique({
+        where: { id: parentId },
+        select: {
+          utilisateur: { select: { id: true } },
+          _count: { select: { enfants: true, remarques: true, rendezVous: true } },
+        },
+      });
+      if (
+        reste && !reste.utilisateur &&
+        reste._count.enfants === 0 && reste._count.remarques === 0 && reste._count.rendezVous === 0
+      ) {
+        await tx.parent.delete({ where: { id: parentId } });
+      }
+    });
+    return { retire: true };
+  }
+
+  // Le contact de la famille doit être le numéro du père, de la mère ou du tuteur
+  private async verifierContactFamille(eleveId: number, telephone: string) {
+    const liens = await this.prisma.parentEleve.findMany({
+      where: { eleveId },
+      include: { parent: { select: { telephone: true } } },
+    });
+    if (liens.length === 0) {
+      throw new BadRequestException(
+        'Ajoutez d\'abord le père, la mère ou le tuteur : le contact de la famille doit être l\'un de leurs numéros.',
+      );
+    }
+    const cible = this.chiffres(telephone);
+    if (!liens.some((l) => this.chiffres(l.parent.telephone) === cible)) {
+      throw new BadRequestException(
+        'Le contact de la famille doit être le numéro du père, de la mère ou du tuteur de cet élève.',
+      );
+    }
+  }
+
+  private readonly CHAMPS_DATE = ['dateNaissance', 'dateInscription', 'assuranceExpiration'];
   private readonly CHAMPS_OBLIGATOIRES = ['nom', 'prenom', 'sexe', 'dateNaissance'];
 
   async modifierEleve(id: number, dto: UpdateEleveDto, utilisateurId?: number) {
@@ -175,6 +274,13 @@ export class ElevesService {
       if (ancien !== nouveau) changements[cle] = { avant: ancien, apres: nouveau };
     }
     if (Object.keys(changements).length === 0) return avant; // rien à écrire, rien à journaliser
+
+    // Règle : le contact de la famille doit être celui du père, de la mère ou du tuteur.
+    // Contrôlé seulement si le numéro change (une fiche ancienne reste modifiable pour le reste).
+    const nouveauContact = changements.telephone?.apres;
+    if (typeof nouveauContact === 'string' && nouveauContact.trim() !== '') {
+      await this.verifierContactFamille(id, nouveauContact);
+    }
 
     const data = Object.fromEntries(Object.keys(changements).map((k) => [k, donnees[k]]));
 

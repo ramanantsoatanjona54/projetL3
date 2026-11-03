@@ -21,7 +21,7 @@ type Modale = { type: 'creer' } | { type: 'modifier'; examen: ExamenListe } | { 
 export default function PageExamensBlancs() {
   const { utilisateur } = useAuth();
   const role = utilisateur?.role ?? '';
-    const gere = role === 'ADMIN'; // seul l'admin crée, modifie et supprime
+  const gere = role === 'ADMIN'; // seul l'admin crée, modifie et supprime
   const autorise = gere || role === 'DIRECTRICE' || role === 'ENSEIGNANT';
 
   const [data, setData] = useState<ListeExamens | null>(null);
@@ -32,6 +32,9 @@ export default function PageExamensBlancs() {
   const [lignes, setLignes] = useState<Ligne[]>([]);
   const [erreurModale, setErreurModale] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
+  const [nouvelle, setNouvelle] = useState('');
+  const [erreurNouvelle, setErreurNouvelle] = useState<string | null>(null);
+  const [creation, setCreation] = useState(false);
 
   const charger = useCallback(() => {
     api.get<ListeExamens>('/examens-blancs').then((d) => { setData(d); setErreur(null); }).catch((e) => setErreur(messageErreur(e)));
@@ -49,13 +52,35 @@ export default function PageExamensBlancs() {
     setDate('');
     setLignes(dernier ? dernier.disciplines.map((d) => ({ matiereId: String(d.matiereId), coefficient: String(d.coefficient) })) : [{ matiereId: '', coefficient: '1' }]);
     setErreurModale(null);
+    setNouvelle(''); setErreurNouvelle(null);
     setModale({ type: 'creer' });
   }
   function ouvrirModifier(examen: ExamenListe) {
     setDate(examen.date);
     setLignes(examen.disciplines.map((d) => ({ matiereId: String(d.matiereId), coefficient: String(d.coefficient) })));
     setErreurModale(null);
+    setNouvelle(''); setErreurNouvelle(null);
     setModale({ type: 'modifier', examen });
+  }
+
+  // Crée une nouvelle discipline (administrateur) puis la place dans la première ligne vide, sinon dans une nouvelle ligne
+  async function creerDiscipline() {
+    const nom = nouvelle.trim().replace(/\s+/g, ' ');
+    if (nom.length < 2) { setErreurNouvelle('Saisissez le nom de la discipline (2 lettres au moins).'); return; }
+    setCreation(true); setErreurNouvelle(null);
+    try {
+      const m = await api.post<MatiereExamen>('/examens-blancs/matieres', { nom });
+      setMatieres((p) => [...p, m].sort((a, b) => a.nom.localeCompare(b.nom, 'fr')));
+      setLignes((p) => {
+        const vide = p.findIndex((l) => !l.matiereId);
+        return vide >= 0 ? p.map((l, j) => (j === vide ? { ...l, matiereId: String(m.id) } : l)) : [...p, { matiereId: String(m.id), coefficient: '1' }];
+      });
+      setNouvelle('');
+    } catch (e) {
+      setErreurNouvelle(messageErreur(e));
+    } finally {
+      setCreation(false);
+    }
   }
 
   function corps() {
@@ -96,6 +121,12 @@ export default function PageExamensBlancs() {
   }
 
   const choisies = new Set(lignes.map((l) => l.matiereId));
+  // Une discipline déjà dans l'examen reste affichée par son nom même si elle n'est plus proposée (ex. Calcul) : on peut la retirer
+  const nomsExamens = new Map(data?.examens.flatMap((e) => e.disciplines.map((d) => [String(d.matiereId), d.nom] as const)) ?? []);
+  const options = [
+    ...matieres.map((m) => ({ id: String(m.id), nom: m.nom })),
+    ...lignes.filter((l) => l.matiereId && !matieres.some((m) => String(m.id) === l.matiereId)).map((l) => ({ id: l.matiereId, nom: nomsExamens.get(l.matiereId) ?? 'Discipline' })),
+  ];
 
   return (
     <div>
@@ -160,7 +191,7 @@ export default function PageExamensBlancs() {
                     <Select value={l.matiereId} onValueChange={(v) => setLignes((p) => p.map((x, j) => (j === i ? { ...x, matiereId: v } : x)))}>
                       <SelectTrigger aria-label={`Discipline ${i + 1}`} className="h-11 w-full"><SelectValue placeholder="Discipline" /></SelectTrigger>
                       <SelectContent>
-                        {matieres.map((m) => <SelectItem key={m.id} value={String(m.id)} disabled={choisies.has(String(m.id)) && l.matiereId !== String(m.id)}>{m.nom}</SelectItem>)}
+                        {options.map((m) => <SelectItem key={m.id} value={m.id} disabled={choisies.has(m.id) && l.matiereId !== m.id}>{m.nom}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -173,6 +204,23 @@ export default function PageExamensBlancs() {
               ))}
               <Button type="button" variant="outline" onClick={() => setLignes((p) => [...p, { matiereId: '', coefficient: '1' }])}>Ajouter une discipline</Button>
             </fieldset>
+
+            <div className="rounded-md border border-dashed border-border p-3">
+              <Label htmlFor="ex-nouvelle" className="text-sm font-medium">Discipline absente de la liste ?</Label>
+              <div className="mt-2 flex flex-wrap items-start gap-2">
+                <Input
+                  id="ex-nouvelle" value={nouvelle} maxLength={60} placeholder="Nom de la nouvelle discipline" autoComplete="off"
+                  onChange={(e) => { setNouvelle(e.target.value); setErreurNouvelle(null); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void creerDiscipline(); } }}
+                  aria-invalid={!!erreurNouvelle} aria-describedby={erreurNouvelle ? 'ex-nouvelle-err' : undefined}
+                  className="h-11 min-w-56 flex-1"
+                />
+                <Button type="button" className="h-11" onClick={creerDiscipline} disabled={creation || nouvelle.trim().length < 2}>
+                  {creation ? 'Création...' : 'Créer et ajouter'}
+                </Button>
+              </div>
+              {erreurNouvelle && <p id="ex-nouvelle-err" role="alert" className="mt-2 text-sm text-destructive">{erreurNouvelle}</p>}
+            </div>
           </div>
         )}
         {modale?.type === 'supprimer' && <p>Supprimer l&apos;examen blanc n°{modale.examen.numero} du {dateFr(modale.examen.date)} ?</p>}

@@ -21,7 +21,7 @@ const TOUS = 'tous';
 export default function RendezVousPersonnel() {
   const { utilisateur } = useAuth();
   const role = utilisateur?.role ?? '';
-  const autorise = ['ADMIN', 'DIRECTRICE', 'SECRETARIAT', 'ENSEIGNANT'].includes(role);
+  const autorise = ['DIRECTRICE','EDUCATEUR'].includes(role);
   const voitTout = role === 'ADMIN' || role === 'DIRECTRICE';
 
   const [statut, setStatut] = useState('DEMANDE');

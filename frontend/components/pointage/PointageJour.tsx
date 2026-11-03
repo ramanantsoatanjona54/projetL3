@@ -42,7 +42,6 @@ export function PointageJour({ admin }: { admin: boolean }) {
   const [modale, setModale] = useState<{ type: TypeModale; agent: PresenceAgent } | null>(null);
   const [arrivee, setArrivee] = useState('');
   const [depart, setDepart] = useState('');
-  const [motif, setMotif] = useState('');
   const [erreurModale, setErreurModale] = useState<string | null>(null);
   const [enCoursModale, setEnCoursModale] = useState(false);
 
@@ -70,11 +69,9 @@ export function PointageJour({ admin }: { admin: boolean }) {
     setModale({ type, agent });
     setErreurModale(null);
     if (type === 'manuel') {
-      setMotif('Saisie manuelle');
       setArrivee(date === aujourdhui ? heureLocale(new Date().toISOString()) : '');
       setDepart('');
     } else {
-      setMotif(type === 'corriger' && p && !p.heureDepart ? "Ajout de l'heure de départ" : '');
       setArrivee(heureLocale(p?.heureArrivee ?? null));
       setDepart(heureLocale(p?.heureDepart ?? null));
     }
@@ -83,27 +80,24 @@ export function PointageJour({ admin }: { admin: boolean }) {
   async function valider() {
     if (!modale) return;
     const { type, agent } = modale;
-    if (motif.trim().length < 5) { setErreurModale('Indiquez le motif (5 caractères minimum).'); return; }
     if (type !== 'annuler') {
       if (!arrivee) { setErreurModale("Saisissez l'heure d'arrivée."); return; }
       if (depart && depart <= arrivee) { setErreurModale("Le départ doit être après l'arrivée."); return; }
-      
     }
     setEnCoursModale(true);
     setErreurModale(null);
     try {
       if (type === 'annuler' && agent.pointage) {
-        await api.post(`/rh/pointages/${agent.pointage.id}/annuler`, { motif: motif.trim() });
+        await api.post(`/rh/pointages/${agent.pointage.id}/annuler`, {});
       } else if (type === 'corriger' && agent.pointage) {
         await api.patch(`/rh/pointages/${agent.pointage.id}/corriger`, {
           heureArrivee: versIso(date, arrivee),
           heureDepart: depart ? versIso(date, depart) : null,
-          motif: motif.trim(),
         });
       } else {
         await api.post('/rh/pointages/manuel', {
           personnelId: agent.id, date, heureArrivee: versIso(date, arrivee),
-          ...(depart ? { heureDepart: versIso(date, depart) } : {}), motif: motif.trim(),
+          ...(depart ? { heureDepart: versIso(date, depart) } : {}),
         });
       }
       setInfo(`Pointage de ${nomComplet(agent)} enregistré.`);
@@ -229,11 +223,6 @@ export function PointageJour({ admin }: { admin: boolean }) {
         {modale?.type === 'annuler' && (
           <p className="text-base">Le pointage de ce jour sera supprimé. L&apos;opération reste tracée dans le journal.</p>
         )}
-        <div className="space-y-1.5">
-          <Label htmlFor="motif" className="text-base">Motif *</Label>
-          <Input id="motif" value={motif} onChange={(e) => setMotif(e.target.value)} maxLength={200}
-            placeholder="Ex. : oubli de pointage, erreur de saisie" className="h-11 text-base" />
-        </div>
       </ModaleCrud>
     </div>
   );
