@@ -72,8 +72,7 @@ export default function PageBulletins() {
       });
       setInfo(
         `${r.publies} bulletin(s) publié(s), ${r.parentsPrevenus} parent(s) prévenu(s).` +
-        (r.incomplets > 0 ? ` ${r.incomplets} incomplet(s) : non publié(s).` : '') +
-        (r.sansAppreciation > 0 ? ` ${r.sansAppreciation} sans appréciation : non publié(s).` : ''),
+        (r.incomplets > 0 ? ` ${r.incomplets} incomplet(s) : non publié(s).` : ''),
       );
       setModale(false);
       charger();
@@ -88,9 +87,8 @@ export default function PageBulletins() {
     return <Alert variant="destructive" role="alert"><AlertDescription>Cette page est réservée à l&apos;équipe de l&apos;école.</AlertDescription></Alert>;
   }
 
-  const redigees = classe?.eleves.filter((e) => e.aAppreciation).length ?? 0;
   const complets = classe?.eleves.filter((e) => e.complet).length ?? 0;
-  const aPublier = classe?.eleves.filter((e) => e.complet && e.aAppreciation && !e.publie).length ?? 0;
+  const aPublier = classe?.eleves.filter((e) => e.complet && !e.publie).length ?? 0;
   const publies = classe?.eleves.filter((e) => e.publie).length ?? 0;
 
   return (
@@ -144,7 +142,7 @@ export default function PageBulletins() {
       {classe && (
         <>
           <p className="mb-2 text-sm text-muted-foreground">
-            {classe.eleves.length} élève(s) · {complets} bulletin(s) complet(s) · {redigees} appréciation(s) rédigée(s) · {publies} publié(s)
+            {classe.eleves.length} élève(s) · {complets} bulletin(s) complet(s) · {publies} publié(s)
           </p>
           {classe.eleves.length === 0 ? (
             <Alert role="status"><AlertDescription>Aucun élève validé dans cette classe pour cette année.</AlertDescription></Alert>
@@ -155,7 +153,6 @@ export default function PageBulletins() {
                   <TableRow>
                     <TableHead>Élève</TableHead>
                     <TableHead>Évaluations</TableHead>
-                    <TableHead>Appréciation</TableHead>
                     <TableHead>Parents</TableHead>
                     <TableHead><span className="sr-only">Action</span></TableHead>
                   </TableRow>
@@ -165,7 +162,6 @@ export default function PageBulletins() {
                     <TableRow key={e.inscriptionId}>
                       <TableCell className="font-medium">{e.prenom} {e.nom}</TableCell>
                       <TableCell className="tabular-nums">{e.evalue} / {e.total} {e.total > 0 && (e.complet ? <Badge variant="outline">Complet</Badge> : <Badge variant="secondary">Incomplet</Badge>)}</TableCell>
-                      <TableCell>{e.aAppreciation ? <Badge variant="outline">Rédigée</Badge> : <Badge variant="secondary">À rédiger</Badge>}</TableCell>
                       <TableCell>{e.publie ? <Badge>Publié</Badge> : <Badge variant="secondary">Non publié</Badge>}</TableCell>
                       <TableCell className="text-right">
                         <Link href={`/dashboard/bulletins/${e.inscriptionId}/${semestre}`} className={buttonVariants({ variant: 'outline' })}>

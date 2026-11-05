@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsInt, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsInt, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class SaisirAppelDto {
   @IsInt()
@@ -10,6 +10,10 @@ export class SaisirAppelDto {
   // Identifiants des INSCRIPTIONS des élèves absents ce jour-là
   @IsArray() @ArrayMaxSize(200) @IsInt({ each: true })
   inscriptionIdsAbsents: number[];
+
+  // Élèves arrivés en retard (présents, mais en retard) : jamais en même temps absents
+  @IsOptional() @IsArray() @ArrayMaxSize(200) @IsInt({ each: true })
+  inscriptionIdsRetard?: number[];
 }
 
 export class JustifierAbsenceDto {

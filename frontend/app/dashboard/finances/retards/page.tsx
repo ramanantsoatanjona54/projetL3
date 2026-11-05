@@ -43,11 +43,19 @@ export default function Retards() {
     setEnCours(true);
     setErreurModale(null);
     try {
-      const r = await api.post<{ envoyes: number }>(`/finances/retards/${cible.inscriptionId}/rappel`, {});
-      setRappeles((prev) => new Set(prev).add(cible.inscriptionId));
-      setSucces(
-        `Rappel envoyé à ${r.envoyes} parent(s) de ${cible.eleve.prenom} ${cible.eleve.nom}.`,
+      const r = await api.post<{ envoyes: number; emails: { envoyes: number; echecs: number; sansAdresse: number; configure: boolean } }>(
+        `/finances/retards/${cible.inscriptionId}/rappel`, {},
       );
+      setRappeles((prev) => new Set(prev).add(cible.inscriptionId));
+      const e = r.emails;
+      let texte = `Rappel envoyé à ${r.envoyes} parent(s) de ${cible.eleve.prenom} ${cible.eleve.nom} (notification dans leur compte).`;
+      if (!e.configure) texte += " L'envoi d'e-mails n'est pas configuré : notification seulement.";
+      else {
+        texte += ` E-mail envoyé : ${e.envoyes}.`;
+        if (e.echecs > 0) texte += ` ${e.echecs} e-mail(s) non remis.`;
+        if (e.sansAdresse > 0) texte += ` ${e.sansAdresse} parent(s) sans adresse e-mail : appelez-les.`;
+      }
+      setSucces(texte);
       setCible(null);
     } catch (e) {
       setErreurModale(messageErreur(e));
@@ -68,7 +76,7 @@ export default function Retards() {
       </p>
 
       {erreur && <Alert variant="destructive" role="alert" className="mb-4"><AlertDescription>{erreur}</AlertDescription></Alert>}
-      {succes && <Alert role="status" className="mb-4"><AlertDescription>{succes}</AlertDescription></Alert>}
+      <div aria-live="polite">{succes && <Alert role="status" className="mb-4"><AlertDescription>{succes}</AlertDescription></Alert>}</div>
 
       {data && (
         <div className="overflow-x-auto rounded-lg border border-border bg-card">
@@ -130,7 +138,7 @@ export default function Retards() {
         titre="Envoyer un rappel de paiement"
         description={
           cible
-            ? `Les parents de ${cible.eleve.prenom} ${cible.eleve.nom} recevront une notification : ${ar(cible.montantDu + cible.penalites)} à régler, pénalités comprises. Un seul rappel est possible par jour.`
+            ? `Les parents de ${cible.eleve.prenom} ${cible.eleve.nom} recevront une notification dans leur compte et un e-mail : ${ar(cible.montantDu + cible.penalites)} à régler, pénalités comprises. Un seul rappel est possible par jour.`
             : ''
         }
         libelleValider="Envoyer le rappel"

@@ -37,6 +37,13 @@ export class AbsencesController {
     return this.service.enregistrerAppel(dto, this.acteur(req));
   }
 
+  // Résumé du mois d'une salle (registre d'appel imprimable) : l'enseignante n'accède qu'à sa salle
+  @Get('resume-mensuel')
+  @Roles(ENSEIGNANT, SECRETARIAT, DIRECTRICE)
+  resumeMensuel(@Query('salleId', ParseIntPipe) salleId: number, @Query('mois') mois: string, @Req() req: any) {
+    return this.service.resumeMensuel(salleId, mois, this.acteur(req));
+  }
+
   @Get()
   @Roles(ENSEIGNANT, SECRETARIAT, DIRECTRICE)
   lister(@Query() q: FiltresAbsences, @Req() req: any) {

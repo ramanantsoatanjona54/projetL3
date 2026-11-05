@@ -1,22 +1,21 @@
 // Types du bulletin (contenu défini par l'administrateur, évalué par l'enseignante)
 
-export type NiveauBulletin = 'A' | 'EA' | 'AR' | 'NA';
+export type NiveauBulletin = 'A' | 'EA' | 'AR';
 
 // Libellés affichés : un seul endroit à modifier si l'école change un intitulé
 export const LIBELLES_NIVEAU: Record<NiveauBulletin, string> = {
   A: 'Acquis',
   EA: "En cours d'acquisition",
   AR: 'À renforcer',
-  NA: 'Non acquis',
 };
 
-export const ORDRE_NIVEAUX: NiveauBulletin[] = ['A', 'EA', 'AR', 'NA'];
+export const ORDRE_NIVEAUX: NiveauBulletin[] = ['A', 'EA', 'AR'];
 
 export interface LigneBulletin { id: number; libelle: string; niveau: NiveauBulletin | null; archive: boolean }
 export interface RubriqueBulletin { id: number | null; titre: string | null; lignes: LigneBulletin[] }
 export interface DisciplineBulletin { id: number; titre: string; rubriques: RubriqueBulletin[] }
 
-export interface ResumeBulletin { A: number; EA: number; AR: number; NA: number; nonEvalue: number }
+export interface ResumeBulletin { A: number; EA: number; AR: number; nonEvalue: number }
 export interface ProgressionBulletin { evalue: number; total: number; complet: boolean }
 
 // Examens blancs (7e) : un document à part par examen
@@ -51,6 +50,8 @@ export interface BulletinDetail {
   appreciation: string | null;
   publie: boolean;
   datePublication: string | null;
+  enseignant: string | null; // signature imprimée en bas du bulletin (ex. « K. RANAVELA »)
+  directrice: string | null;
 }
 
 export interface EleveClasseBulletin {
@@ -77,10 +78,10 @@ export interface ProgressionParent {
 }
 
 export function recalculerResume(disciplines: DisciplineBulletin[]): { resume: ResumeBulletin; progression: ProgressionBulletin } {
-  const resume: ResumeBulletin = { A: 0, EA: 0, AR: 0, NA: 0, nonEvalue: 0 };
+  const resume: ResumeBulletin = { A: 0, EA: 0, AR: 0, nonEvalue: 0 };
   let total = 0, evalue = 0;
   for (const d of disciplines) for (const r of d.rubriques) for (const l of r.lignes) {
-    if (l.niveau) resume[l.niveau]++; else resume.nonEvalue++;
+    if (l.niveau && l.niveau in resume) resume[l.niveau]++; else resume.nonEvalue++;
     if (!l.archive) { total++; if (l.niveau) evalue++; }
   }
   return { resume, progression: { evalue, total, complet: total > 0 && evalue === total } };

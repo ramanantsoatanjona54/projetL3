@@ -30,6 +30,12 @@ const CLE_VALIDE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 export interface FichierEnvoye { originalname: string; buffer: Buffer; size: number; mimetype: string }
 export interface Acteur { id: number; role: RoleUtilisateur }
 export interface FiltresDossiers { page?: string; taille?: string; q?: string; type?: string }
+export type Espace = 'general' | 'direction';
+
+// Catégorie réservée : jamais présente dans TYPES_PAR_ROLE, donc invisible partout ailleurs
+export const TYPE_DIRECTION = 'Direction';
+const ROLES_DIRECTION: RoleUtilisateur[] = [RoleUtilisateur.DIRECTRICE, RoleUtilisateur.COMPTABLE];
+const accesDirection = (role: RoleUtilisateur) => ROLES_DIRECTION.includes(role);
 
 // Types de documents visibles par rôle (moindre privilège). Un document sans type est traité comme « Autre ».
 const TOUS_TYPES = ['Circulaire', 'Support de cours', 'Administratif', 'Autre'];
@@ -45,7 +51,7 @@ const typesVisibles = (role: RoleUtilisateur): string[] => TYPES_PAR_ROLE[role] 
 // Multer lit parfois les noms accentués en latin1 : on rétablit l'UTF-8
 function corrigerNom(brut: string): string {
   const converti = Buffer.from(brut, 'latin1').toString('utf8');
-  const nom = converti.includes('\uFFFD') ? brut : converti;
+  const nom = converti.includes('�') ? brut : converti;
   return nom.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(-120);
 }
 
@@ -53,7 +59,19 @@ function corrigerNom(brut: string): string {
 export class DossiersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async deposer(fichier: FichierEnvoye | undefined, dto: DeposerDossierDto, acteur: Acteur) {
+  async deposer(fichier: FichierEnvoye | undefined, dto: DeposerDossierDto, acteur: Acteur, espace: Espace = 'general') {
+    // ---- Droits de dépôt (avant tout traitement du fichier) ----
+    if (espace === 'direction') {
+      if (!accesDirection(acteur.role)) throw new ForbiddenException('Accès réservé à la direction.');
+    } else {
+      if (dto.type === TYPE_DIRECTION) throw new ForbiddenException('Cette catégorie se dépose dans l’Espace Direction.');
+      if (acteur.role === RoleUtilisateur.COMPTABLE) throw new ForbiddenException('Votre rôle ne peut pas déposer de document ici.');
+      if (dto.type && !typesVisibles(acteur.role).includes(dto.type)) {
+        throw new ForbiddenException(`Votre rôle ne peut pas déposer de document de type « ${dto.type} ».`);
+      }
+    }
+    const type = espace === 'direction' ? TYPE_DIRECTION : (dto.type ?? null);
+
     if (!fichier || !fichier.buffer || fichier.size === 0) throw new BadRequestException('Aucun fichier reçu.');
     if (fichier.size > TAILLE_MAX) throw new BadRequestException('Fichier trop volumineux (10 Mo maximum).');
 
@@ -61,21 +79,21 @@ export class DossiersService {
     const ext = nomOriginal.includes('.') ? nomOriginal.split('.').pop()!.toLowerCase() : '';
     const regle = REGLES[ext];
     if (!regle) throw new BadRequestException('Format non accepté. Formats permis : PDF, Word, Excel, PowerPoint, PNG, JPEG.');
-    if (!regle.signatureOk(fichier.buffer)) throw new BadRequestException("Le contenu du fichier ne correspond pas à son extension.");
+    if (!regle.signatureOk(fichier.buffer)) throw new BadRequestException('Le contenu du fichier ne correspond pas à son extension.');
 
     const titre = dto.titre.trim();
     if (titre.length < 3) throw new BadRequestException('Titre trop court.');
-        if (dto.type && !typesVisibles(acteur.role).includes(dto.type)) {
-      throw new ForbiddenException(`Votre rôle ne peut pas déposer de document de type « ${dto.type} ».`);
-    }
 
-    // ---- Anti-doublons : même titre, même contenu ----
+    // ---- Anti-doublons : même titre, même contenu (sans jamais révéler un document Direction) ----
     if (await this.prisma.dossierPartage.findFirst({ where: { titre: { equals: titre, mode: 'insensitive' } }, select: { id: true } })) {
       throw new ConflictException('Un document porte déjà ce titre.');
     }
     const empreinte = createHash('sha256').update(fichier.buffer).digest('hex');
-    const memeContenu = await this.prisma.dossierPartage.findUnique({ where: { empreinte }, select: { titre: true } });
-    if (memeContenu) throw new ConflictException(`Ce fichier est déjà déposé sous le titre « ${memeContenu.titre} ».`);
+    const memeContenu = await this.prisma.dossierPartage.findUnique({ where: { empreinte }, select: { titre: true, type: true } });
+    if (memeContenu) {
+      const cache = memeContenu.type === TYPE_DIRECTION && !accesDirection(acteur.role);
+      throw new ConflictException(cache ? 'Ce fichier est déjà déposé.' : `Ce fichier est déjà déposé sous le titre « ${memeContenu.titre} ».`);
+    }
 
     // ---- Écriture sous un nom aléatoire, puis ligne en base (nettoyage si la base refuse) ----
     const cle = `${randomUUID()}.${ext}`;
@@ -86,14 +104,15 @@ export class DossiersService {
       return await this.prisma.$transaction(async (tx) => {
         const d = await tx.dossierPartage.create({
           data: {
-            titre, type: dto.type ?? null, fichierUrl: cle, nomOriginal, mime: regle.mime,
+            titre, type, fichierUrl: cle, nomOriginal, mime: regle.mime,
             taille: fichier.size, empreinte, deposeParId: acteur.id,
           },
           select: { id: true, titre: true },
         });
         await tx.journalAudit.create({
           data: {
-            utilisateurId: acteur.id, action: 'DOSSIER_DEPOSE', entite: 'DossierPartage', entiteId: d.id,
+            utilisateurId: acteur.id, action: espace === 'direction' ? 'DOSSIER_DIRECTION_DEPOSE' : 'DOSSIER_DEPOSE',
+            entite: 'DossierPartage', entiteId: d.id,
             details: { titre, taille: fichier.size, format: ext },
           },
         });
@@ -108,18 +127,24 @@ export class DossiersService {
     }
   }
 
-    async lister(acteur: Acteur, f: FiltresDossiers) {
+  async lister(acteur: Acteur, f: FiltresDossiers, espace: Espace = 'general') {
     const page = Math.max(1, parseInt(f.page ?? '1', 10) || 1);
     const taille = Math.min(50, Math.max(1, parseInt(f.taille ?? '15', 10) || 15));
     const q = f.q?.trim();
-    const visibles = typesVisibles(acteur.role);
-    const accessible: Prisma.DossierPartageWhereInput = {
-      OR: [{ type: { in: visibles } }, ...(visibles.includes('Autre') ? [{ type: null }] : [])],
-    };
+
+    let accessible: Prisma.DossierPartageWhereInput;
+    let visibles: string[] = [];
+    if (espace === 'direction') {
+      if (!accesDirection(acteur.role)) throw new ForbiddenException('Accès réservé à la direction.');
+      accessible = { type: TYPE_DIRECTION };
+    } else {
+      visibles = typesVisibles(acteur.role);
+      accessible = { OR: [{ type: { in: visibles } }, ...(visibles.includes('Autre') ? [{ type: null }] : [])] };
+    }
     const where: Prisma.DossierPartageWhereInput = {
       AND: [
         accessible,
-        ...(f.type ? [{ type: f.type }] : []),
+        ...(espace === 'general' && f.type ? [{ type: f.type }] : []),
         ...(q ? [{ OR: [{ titre: { contains: q, mode: 'insensitive' as const } }, { nomOriginal: { contains: q, mode: 'insensitive' as const } }] }] : []),
       ],
     };
@@ -134,7 +159,9 @@ export class DossiersService {
         },
       }),
     ]);
-    const direction = acteur.role === RoleUtilisateur.ADMIN || acteur.role === RoleUtilisateur.DIRECTRICE;
+    const direction = espace === 'direction'
+      ? acteur.role === RoleUtilisateur.DIRECTRICE
+      : acteur.role === RoleUtilisateur.ADMIN || acteur.role === RoleUtilisateur.DIRECTRICE;
     return {
       total, page, taille, typesAutorises: visibles,
       lignes: rows.map((d) => ({
@@ -147,34 +174,56 @@ export class DossiersService {
     };
   }
 
-      async ouvrir(id: number, acteur: Acteur) {
+  async ouvrir(id: number, acteur: Acteur) {
     const d = await this.prisma.dossierPartage.findUnique({
-      where: { id }, select: { fichierUrl: true, nomOriginal: true, mime: true, empreinte: true, type: true },
+      where: { id }, select: { fichierUrl: true, nomOriginal: true, mime: true, empreinte: true, type: true, titre: true },
     });
     if (!d || !d.empreinte || !d.nomOriginal || !d.mime || !CLE_VALIDE.test(d.fichierUrl)) {
       throw new NotFoundException('Fichier non disponible');
     }
     // Type interdit pour ce rôle : même réponse que si le fichier n'existait pas (rien n'est révélé)
-    if (!typesVisibles(acteur.role).includes(d.type ?? 'Autre')) throw new NotFoundException('Fichier non disponible');
+    const estDirection = d.type === TYPE_DIRECTION;
+    const permis = estDirection ? accesDirection(acteur.role) : typesVisibles(acteur.role).includes(d.type ?? 'Autre');
+    if (!permis) throw new NotFoundException('Fichier non disponible');
+
     const chemin = join(RACINE, d.fichierUrl);
     const infos = await stat(chemin).catch(() => null);
     if (!infos) throw new NotFoundException('Fichier introuvable sur le serveur');
+
+    // Traçabilité : tout téléchargement dans l'Espace Direction est journalisé
+    if (estDirection) {
+      await this.prisma.journalAudit.create({
+        data: { utilisateurId: acteur.id, action: 'DOSSIER_DIRECTION_TELECHARGE', entite: 'DossierPartage', entiteId: id, details: { titre: d.titre } },
+      });
+    }
     return { flux: createReadStream(chemin), mime: d.mime, nom: d.nomOriginal, taille: infos.size };
   }
 
   async supprimer(id: number, acteur: Acteur) {
     const d = await this.prisma.dossierPartage.findUnique({
-      where: { id }, select: { titre: true, fichierUrl: true, deposeParId: true },
+      where: { id }, select: { titre: true, fichierUrl: true, deposeParId: true, type: true },
     });
     if (!d) throw new NotFoundException('Document introuvable');
-    const direction = acteur.role === RoleUtilisateur.ADMIN || acteur.role === RoleUtilisateur.DIRECTRICE;
-    if (!direction && d.deposeParId !== acteur.id) {
-      throw new ForbiddenException('Vous ne pouvez supprimer que vos propres documents.');
+
+    const estDirection = d.type === TYPE_DIRECTION;
+    if (estDirection) {
+      if (!accesDirection(acteur.role)) throw new NotFoundException('Document introuvable'); // rien n'est révélé
+      if (acteur.role !== RoleUtilisateur.DIRECTRICE && d.deposeParId !== acteur.id) {
+        throw new ForbiddenException('Vous ne pouvez supprimer que vos propres documents.');
+      }
+    } else {
+      const direction = acteur.role === RoleUtilisateur.ADMIN || acteur.role === RoleUtilisateur.DIRECTRICE;
+      if (!direction && d.deposeParId !== acteur.id) {
+        throw new ForbiddenException('Vous ne pouvez supprimer que vos propres documents.');
+      }
     }
     await this.prisma.$transaction([
       this.prisma.dossierPartage.delete({ where: { id } }),
       this.prisma.journalAudit.create({
-        data: { utilisateurId: acteur.id, action: 'DOSSIER_SUPPRIME', entite: 'DossierPartage', entiteId: id, details: { titre: d.titre } },
+        data: {
+          utilisateurId: acteur.id, action: estDirection ? 'DOSSIER_DIRECTION_SUPPRIME' : 'DOSSIER_SUPPRIME',
+          entite: 'DossierPartage', entiteId: id, details: { titre: d.titre },
+        },
       }),
     ]);
     if (CLE_VALIDE.test(d.fichierUrl)) await unlink(join(RACINE, d.fichierUrl)).catch(() => undefined);

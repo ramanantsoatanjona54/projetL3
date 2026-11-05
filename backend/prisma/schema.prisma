@@ -194,6 +194,7 @@ model Inscription {
   absences        Absence[]
 
   @@index([eleveId, anneeScolaireId])
+  retards         Retard[]
 }
 
 // ============================================================
@@ -738,6 +739,7 @@ model Utilisateur {
   totpActif         Boolean       @default(false)
   totpDernierPas    Int?
   codesSecours      CodeSecours[]
+  retardsSaisis   Retard[]
 }
 model Session {
   id               String      @id @default(uuid()) @db.Uuid
@@ -779,3 +781,16 @@ enum TypePersonnel {
   CONSULTANT
 }
 
+// Retard d'un élève à l'arrivée : au plus un par élève et par jour (jamais le même jour qu'une absence : contrôlé par l'appel)
+model Retard {
+  id            Int         @id @default(autoincrement())
+  inscriptionId Int
+  inscription   Inscription @relation(fields: [inscriptionId], references: [id])
+  date          DateTime    @db.Date
+  saisiParId    Int
+  saisiPar      Utilisateur @relation(fields: [saisiParId], references: [id])
+  creeLe        DateTime    @default(now())
+
+  @@unique([inscriptionId, date])
+  @@index([date])
+}

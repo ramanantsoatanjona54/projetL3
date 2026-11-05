@@ -17,6 +17,7 @@ export async function nettoyer(prisma: PrismaClient): Promise<void> {
       await tx.journalActivite.deleteMany();
       await tx.rendezVous.deleteMany();
       await tx.remarqueParent.deleteMany();
+      await tx.retard.deleteMany();
       await tx.absence.deleteMany();
       await tx.mouvementInventaire.deleteMany();
       await tx.inventaire.deleteMany();

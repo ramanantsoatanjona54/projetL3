@@ -172,6 +172,7 @@ export default function PageExamensBlancs() {
         description={modale?.type === 'supprimer' ? 'Cette action est définitive.' : 'Le numéro est attribué automatiquement.'}
         libelleValider={modale?.type === 'supprimer' ? 'Supprimer' : 'Enregistrer'}
         destructif={modale?.type === 'supprimer'}
+        large={modale?.type !== 'supprimer'}
         enCours={enCours}
         erreur={erreurModale}
         onFermer={() => setModale(null)}
@@ -186,7 +187,7 @@ export default function PageExamensBlancs() {
             <fieldset className="space-y-2">
               <legend className="mb-1 text-sm font-medium">Disciplines et coefficients</legend>
               {lignes.map((l, i) => (
-                <div key={i} className="flex items-end gap-2">
+                <div key={i} className="flex items-center gap-2">
                   <div className="flex-1">
                     <Select value={l.matiereId} onValueChange={(v) => setLignes((p) => p.map((x, j) => (j === i ? { ...x, matiereId: v } : x)))}>
                       <SelectTrigger aria-label={`Discipline ${i + 1}`} className="h-11 w-full"><SelectValue placeholder="Discipline" /></SelectTrigger>
@@ -196,13 +197,13 @@ export default function PageExamensBlancs() {
                     </Select>
                   </div>
                   <Input
-                    aria-label={`Coefficient ${i + 1}`} inputMode="numeric" className="h-11 w-20 text-center"
+                    aria-label={`Coefficient ${i + 1}`} inputMode="numeric" className="h-11 w-20 shrink-0 text-center"
                     value={l.coefficient} onChange={(e) => setLignes((p) => p.map((x, j) => (j === i ? { ...x, coefficient: e.target.value } : x)))}
                   />
-                  <Button type="button" variant="outline" className="h-11" onClick={() => setLignes((p) => p.filter((_, j) => j !== i))} aria-label={`Retirer la discipline ${i + 1}`}>Retirer</Button>
+                  <Button type="button" variant="outline" className="h-11 w-24 shrink-0" onClick={() => setLignes((p) => p.filter((_, j) => j !== i))} aria-label={`Retirer la discipline ${i + 1}`}>Retirer</Button>
                 </div>
               ))}
-              <Button type="button" variant="outline" onClick={() => setLignes((p) => [...p, { matiereId: '', coefficient: '1' }])}>Ajouter une discipline</Button>
+              <Button type="button" variant="outline" className="h-11" onClick={() => setLignes((p) => [...p, { matiereId: '', coefficient: '1' }])}>Ajouter une discipline</Button>
             </fieldset>
 
             <div className="rounded-md border border-dashed border-border p-3">
@@ -215,7 +216,7 @@ export default function PageExamensBlancs() {
                   aria-invalid={!!erreurNouvelle} aria-describedby={erreurNouvelle ? 'ex-nouvelle-err' : undefined}
                   className="h-11 min-w-56 flex-1"
                 />
-                <Button type="button" className="h-11" onClick={creerDiscipline} disabled={creation || nouvelle.trim().length < 2}>
+                <Button type="button" className="h-11 shrink-0" onClick={creerDiscipline} disabled={creation || nouvelle.trim().length < 2}>
                   {creation ? 'Création...' : 'Créer et ajouter'}
                 </Button>
               </div>

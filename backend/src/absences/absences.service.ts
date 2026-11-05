@@ -94,6 +94,7 @@ export class AbsencesService {
         id: true,
         eleve: { select: { nom: true, prenom: true, matricule: true } },
         absences: { where: { date: jour }, select: { id: true, justifiee: true, motif: true } },
+        retards: { where: { date: jour }, select: { id: true } },
       },
     });
 
@@ -102,6 +103,7 @@ export class AbsencesService {
       eleves: inscriptions.map((i) => ({
         inscriptionId: i.id, nom: i.eleve.nom, prenom: i.eleve.prenom, matricule: i.eleve.matricule,
         absence: i.absences[0] ?? null,
+        retard: i.retards.length > 0,
       })),
     };
   }
@@ -124,13 +126,23 @@ export class AbsencesService {
           },
         },
         absences: { where: { date: jour }, select: { id: true, justifiee: true } },
+        retards: { where: { date: jour }, select: { id: true } },
       },
     });
 
     const connus = new Set(inscriptions.map((i) => i.id));
     const demandes = new Set(dto.inscriptionIdsAbsents);
-    if ([...demandes].some((id) => !connus.has(id))) {
+    const retardsDemandes = new Set(dto.inscriptionIdsRetard ?? []);
+    if ([...demandes, ...retardsDemandes].some((id) => !connus.has(id))) {
       throw new BadRequestException('Certains élèves ne font pas partie de cette salle à cette date.');
+    }
+    // Un élève ne peut pas être à la fois absent et en retard le même jour
+    if ([...retardsDemandes].some((id) => demandes.has(id))) {
+      throw new BadRequestException('Un élève ne peut pas être absent et en retard le même jour.');
+    }
+    // Une absence justifiée reste verrouillée : elle ne devient pas un retard
+    if (inscriptions.some((i) => retardsDemandes.has(i.id) && i.absences[0]?.justifiee)) {
+      throw new BadRequestException("Cette absence est justifiée : elle ne peut pas être transformée en retard.");
     }
 
     const aCreer = inscriptions.filter((i) => demandes.has(i.id) && i.absences.length === 0);
@@ -138,6 +150,8 @@ export class AbsencesService {
     const aRetirer = inscriptions.filter((i) => !demandes.has(i.id) && i.absences.length > 0 && !i.absences[0].justifiee);
     const justifieesConservees = inscriptions.filter((i) => i.absences.length > 0 && i.absences[0].justifiee).length;
     const existantes = inscriptions.filter((i) => i.absences.length > 0).length;
+    const retardsACreer = inscriptions.filter((i) => retardsDemandes.has(i.id) && i.retards.length === 0);
+    const retardsARetirer = inscriptions.filter((i) => !retardsDemandes.has(i.id) && i.retards.length > 0);
 
     const jourTxt = libelleJour(iso);
     const parents = (i: (typeof inscriptions)[number]) =>
@@ -158,8 +172,17 @@ export class AbsencesService {
       }
     }
 
-    if (aCreer.length > 0 || aRetirer.length > 0) {
+    if (aCreer.length > 0 || aRetirer.length > 0 || retardsACreer.length > 0 || retardsARetirer.length > 0) {
       await this.prisma.$transaction(async (tx) => {
+        if (retardsACreer.length > 0) {
+          await tx.retard.createMany({
+            data: retardsACreer.map((i) => ({ inscriptionId: i.id, date: jour, saisiParId: acteur.id })),
+            skipDuplicates: true,
+          });
+        }
+        if (retardsARetirer.length > 0) {
+          await tx.retard.deleteMany({ where: { id: { in: retardsARetirer.map((i) => i.retards[0].id) } } });
+        }
         if (aCreer.length > 0) {
           await tx.absence.createMany({
             data: aCreer.map((i) => ({ inscriptionId: i.id, date: jour, justifiee: false, saisiParId: acteur.id })),
@@ -178,6 +201,7 @@ export class AbsencesService {
             details: {
               salle: salle.nom, date: iso,
               ajoutees: aCreer.map((i) => i.id), retirees: aRetirer.map((i) => i.id),
+              retardsAjoutes: retardsACreer.map((i) => i.id), retardsRetires: retardsARetirer.map((i) => i.id),
             },
           },
         });
@@ -189,6 +213,73 @@ export class AbsencesService {
       retirees: aRetirer.length,
       justifieesConservees,
       totalAbsents: existantes - aRetirer.length + aCreer.length,
+      retardsAjoutes: retardsACreer.length,
+      retardsRetires: retardsARetirer.length,
+      totalRetards: retardsDemandes.size,
+    };
+  }
+
+  // ---------- Résumé du mois : registre d'appel imprimable (une salle, un mois) ----------
+
+  async resumeMensuel(salleId: number, mois: string | undefined, acteur: Acteur) {
+    if (!mois || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mois)) throw new BadRequestException('Mois invalide (AAAA-MM).');
+    const salle = await this.exigerSalle(acteur, salleId);
+
+    const debut = enJour(`${mois}-01`);
+    const debutSuivant = new Date(Date.UTC(debut.getUTCFullYear(), debut.getUTCMonth() + 1, 1));
+    const aujourdhui = jourLocalIso();
+    if (debut.toISOString().slice(0, 10) > aujourdhui) throw new BadRequestException('Ce mois est dans le futur.');
+
+    // Jours d'école du mois (lundi à vendredi)
+    const jours: string[] = [];
+    for (let t = debut.getTime(); t < debutSuivant.getTime(); t += JOUR_MS) {
+      if (estOuvre(new Date(t))) jours.push(new Date(t).toISOString().slice(0, 10));
+    }
+    const derniereBorne = jours.filter((j) => j <= aujourdhui).pop() ?? jours[0];
+    const annee = await this.anneePour(derniereBorne);
+
+    const [inscriptions, prof] = await Promise.all([
+      this.prisma.inscription.findMany({
+        where: { salleId: salle.id, anneeScolaireId: annee.id, statut: 'validee' },
+        orderBy: [{ niveau: { ordre: 'asc' } }, { eleve: { nom: 'asc' } }, { eleve: { prenom: 'asc' } }],
+        select: {
+          id: true,
+          niveau: { select: { nom: true } },
+          eleve: { select: { nom: true, prenom: true, sexe: true, numeroInscription: true } },
+          absences: { where: { date: { gte: debut, lt: debutSuivant } }, select: { date: true, justifiee: true } },
+          retards: { where: { date: { gte: debut, lt: debutSuivant } }, select: { date: true } },
+        },
+      }),
+      this.prisma.personnel.findFirst({ where: { salleAffecteeId: salle.id }, orderBy: { id: 'asc' }, select: { nom: true, prenom: true } }),
+    ]);
+
+    // Numérotation qui repart à 1 à chaque niveau, comme sur le registre papier
+    const compteurs = new Map<string, number>();
+    const eleves = inscriptions.map((i) => {
+      const n = (compteurs.get(i.niveau.nom) ?? 0) + 1;
+      compteurs.set(i.niveau.nom, n);
+      const abs = i.absences.map((a) => ({ date: a.date.toISOString().slice(0, 10), justifiee: a.justifiee }));
+      const ret = i.retards.map((r) => r.date.toISOString().slice(0, 10));
+      return {
+        inscriptionId: i.id, rang: n, numeroInscription: i.eleve.numeroInscription,
+        nom: i.eleve.nom, prenom: i.eleve.prenom, sexe: i.eleve.sexe, niveau: i.niveau.nom,
+        absences: abs, retards: ret,
+        totalAbsences: abs.length, totalRetards: ret.length,
+      };
+    });
+
+    // Par jour : seuls les jours déjà écoulés ont des totaux
+    const parJour = jours.map((j) => {
+      if (j > aujourdhui) return { date: j, absents: null as number | null, presents: null as number | null, retards: null as number | null };
+      const absents = eleves.filter((e) => e.absences.some((a) => a.date === j)).length;
+      const retards = eleves.filter((e) => e.retards.includes(j)).length;
+      return { date: j, absents, retards, presents: eleves.length - absents };
+    });
+
+    return {
+      salle, mois, jours, parJour, eleves, effectif: eleves.length,
+      enseignant: prof ? { nom: prof.nom, prenom: prof.prenom } : null,
+      anneeScolaire: annee.libelle,
     };
   }
 

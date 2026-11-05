@@ -19,7 +19,13 @@ import { ModaleCrud } from '@/components/structure/ModaleCrud';
 
 const TOUS = 'tous';
 
-export function Dossiers({ peutDeposer }: { peutDeposer: boolean }) {
+// espace « general » : documents du personnel (catégories) ; espace « direction » : documents réservés
+// à la directrice et au comptable (pas de catégorie : tout est « Direction »)
+export function Dossiers({ peutDeposer, espace = 'general' }: { peutDeposer: boolean; espace?: 'general' | 'direction' }) {
+  const direction = espace === 'direction';
+  const base = direction ? '/dossiers/direction' : '/dossiers';
+  const urlDepot = direction ? '/api/dossiers/depot-direction' : '/api/dossiers/depot';
+
   const [q, setQ] = useState('');
   const [qAppliquee, setQAppliquee] = useState('');
   const [type, setType] = useState(TOUS);
@@ -45,11 +51,11 @@ export function Dossiers({ peutDeposer }: { peutDeposer: boolean }) {
   const charger = useCallback(() => {
     const p = new URLSearchParams({ page: String(page), taille: '15' });
     if (qAppliquee) p.set('q', qAppliquee);
-    if (type !== TOUS) p.set('type', type);
-    api.get<PageDossiers>(`/dossiers?${p.toString()}`)
+    if (!direction && type !== TOUS) p.set('type', type);
+    api.get<PageDossiers>(`${base}?${p.toString()}`)
       .then((d) => { setDonnees(d); setTypesAutorises(d.typesAutorises ?? []); setErreur(null); })
       .catch((e) => setErreur(messageErreur(e)));
-  }, [page, qAppliquee, type]);
+  }, [page, qAppliquee, type, base, direction]);
 
   useEffect(() => { setDonnees(null); charger(); }, [charger]);
 
@@ -81,9 +87,9 @@ export function Dossiers({ peutDeposer }: { peutDeposer: boolean }) {
     try {
       const fd = new FormData();
       fd.append('titre', titre.trim());
-      if (nature) fd.append('type', nature);
+      if (!direction && nature) fd.append('type', nature);
       fd.append('fichier', fichier);
-      const r = await fetch('/api/dossiers/depot', { method: 'POST', body: fd });
+      const r = await fetch(urlDepot, { method: 'POST', body: fd });
       if (!r.ok) { setErreurDepot(await lireErreurHttp(r)); return; }
       setInfo('Document déposé.');
       setTitre(''); setNature(''); setFichier(null); setCleInput((c) => c + 1);
@@ -134,6 +140,7 @@ export function Dossiers({ peutDeposer }: { peutDeposer: boolean }) {
 
   const pages = donnees ? Math.max(1, Math.ceil(donnees.total / donnees.taille)) : 1;
   const lignes = Array.isArray(donnees?.lignes) ? donnees.lignes : [];
+  const nbColonnes = direction ? 4 : 5;
 
   return (
     <div>
@@ -144,13 +151,15 @@ export function Dossiers({ peutDeposer }: { peutDeposer: boolean }) {
             <Label htmlFor="dos-titre" className="text-base">Titre *</Label>
             <Input id="dos-titre" maxLength={120} value={titre} onChange={(e) => setTitre(e.target.value)} className="h-11 text-base" />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="dos-type" className="text-base">Catégorie</Label>
-            <Select value={nature} onValueChange={setNature}>
-              <SelectTrigger id="dos-type" className="h-11 w-full text-base"><SelectValue placeholder="Choisir (facultatif)" /></SelectTrigger>
-              <SelectContent>{typesAutorises.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
+          {!direction && (
+            <div className="space-y-1.5">
+              <Label htmlFor="dos-type" className="text-base">Catégorie</Label>
+              <Select value={nature} onValueChange={setNature}>
+                <SelectTrigger id="dos-type" className="h-11 w-full text-base"><SelectValue placeholder="Choisir (facultatif)" /></SelectTrigger>
+                <SelectContent>{typesAutorises.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="dos-fichier" className="text-base">Fichier * (PDF, Word, Excel, PowerPoint, PNG, JPEG · 10 Mo max)</Label>
             <Input
@@ -175,16 +184,18 @@ export function Dossiers({ peutDeposer }: { peutDeposer: boolean }) {
           <Label htmlFor="dos-q" className="text-base">Rechercher</Label>
           <Input id="dos-q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Titre ou nom du fichier" className="h-11 w-64 text-base" />
         </div>
-        <div className="w-52 space-y-1.5">
-          <Label htmlFor="dos-filtre" className="text-base">Catégorie</Label>
-          <Select value={type} onValueChange={(v) => { setType(v); setPage(1); }}>
-            <SelectTrigger id="dos-filtre" className="h-11 w-full text-base"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={TOUS}>Toutes</SelectItem>
-              {typesAutorises.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+        {!direction && (
+          <div className="w-52 space-y-1.5">
+            <Label htmlFor="dos-filtre" className="text-base">Catégorie</Label>
+            <Select value={type} onValueChange={(v) => { setType(v); setPage(1); }}>
+              <SelectTrigger id="dos-filtre" className="h-11 w-full text-base"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TOUS}>Toutes</SelectItem>
+                {typesAutorises.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <Button type="submit">Rechercher</Button>
       </form>
 
@@ -196,13 +207,15 @@ export function Dossiers({ peutDeposer }: { peutDeposer: boolean }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Document</TableHead><TableHead>Catégorie</TableHead><TableHead>Déposé par</TableHead>
+              <TableHead>Document</TableHead>
+              {!direction && <TableHead>Catégorie</TableHead>}
+              <TableHead>Déposé par</TableHead>
               <TableHead>Date</TableHead><TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {!donnees ? null : lignes.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">Aucun document.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={nbColonnes} className="py-10 text-center text-muted-foreground">Aucun document.</TableCell></TableRow>
             ) : lignes.map((d) => (
               <TableRow key={d.id}>
                 <TableCell>
@@ -211,7 +224,7 @@ export function Dossiers({ peutDeposer }: { peutDeposer: boolean }) {
                     {d.aFichier ? `${d.nomOriginal} · ${tailleLisible(d.taille)}` : <Badge variant="outline">Sans fichier (ancien dépôt)</Badge>}
                   </span>
                 </TableCell>
-                <TableCell>{d.type ?? '—'}</TableCell>
+                {!direction && <TableCell>{d.type ?? '—'}</TableCell>}
                 <TableCell className="text-sm">{d.deposePar ?? '—'}</TableCell>
                 <TableCell className="whitespace-nowrap">{dateFr(d.date)}</TableCell>
                 <TableCell>

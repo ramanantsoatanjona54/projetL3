@@ -22,8 +22,26 @@ export class DossiersController {
 
   private acteur(req: any) { return { id: req.user.id as number, role: req.user.role as RoleUtilisateur }; }
 
+  // ---------- Espace Direction (DIRECTRICE + COMPTABLE uniquement) ----------
+  // Routes statiques déclarées avant les routes à paramètre
+
+  @Get('direction')
+  @Roles(DIRECTRICE, COMPTABLE)
+  listerDirection(@Query() q: FiltresDossiers, @Req() req: any) {
+    return this.service.lister(this.acteur(req), q, 'direction');
+  }
+
+  @Post('direction')
+  @Roles(DIRECTRICE, COMPTABLE)
+  @UseInterceptors(FileInterceptor('fichier', { limits: { fileSize: TAILLE_MAX, files: 1 } }))
+  deposerDirection(@UploadedFile() fichier: FichierEnvoye, @Body() dto: DeposerDossierDto, @Req() req: any) {
+    return this.service.deposer(fichier, dto, this.acteur(req), 'direction');
+  }
+
+  // ---------- Documents du personnel ----------
+
   @Get()
-  lister(@Query() q: FiltresDossiers, @Req() req: any) { return this.service.lister(this.acteur(req), q); }
+  lister(@Query() q: FiltresDossiers, @Req() req: any) { return this.service.lister(this.acteur(req), q, 'general'); }
 
   @Post()
   @Roles(ADMIN, DIRECTRICE, SECRETARIAT, ENSEIGNANT)
@@ -46,7 +64,8 @@ export class DossiersController {
     });
   }
 
+  // COMPTABLE autorisé ici uniquement pour ses propres documents Direction : le service tranche
   @Delete(':id')
-  @Roles(ADMIN, DIRECTRICE, SECRETARIAT, ENSEIGNANT)
+  @Roles(ADMIN, DIRECTRICE, SECRETARIAT, ENSEIGNANT, COMPTABLE)
   supprimer(@Param('id', ParseIntPipe) id: number, @Req() req: any) { return this.service.supprimer(id, this.acteur(req)); }
 }

@@ -123,6 +123,9 @@ function liensPour(role: string, profil: { avecExamens: boolean } | null): LienM
     liens.push({ href: '/dashboard/bulletins', libelle: 'Bulletins' });
     liens.push({ href: '/dashboard/bulletin-modele', libelle: 'Contenu du bulletin' });
   }
+  if (est('DIRECTRICE', 'COMPTABLE')) {
+    liens.push({ href: '/dashboard/direction', libelle: 'Espace Direction' });
+  }
   liens.push({ href: '/dashboard/securite', libelle: 'Sécurité' });
   liens.push(...communication);
   if (est('ADMIN', 'DIRECTRICE')) {

@@ -12,8 +12,6 @@ import { BulletinVue } from '@/components/bulletins/BulletinVue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 
 const MAX = 1000;
 
@@ -108,7 +106,7 @@ export default function PageBulletinEleve() {
   const modifie = (b?.appreciation ?? '') !== texte;
   const p = b?.progression;
   const pourcent = p && p.total > 0 ? Math.round((p.evalue / p.total) * 100) : 0;
-  const publiable = !!b && p?.complet === true && !!b.appreciation;
+  const publiable = !!b && p?.complet === true;
 
   return (
     <div>
@@ -138,7 +136,7 @@ export default function PageBulletinEleve() {
               <div className="h-full bg-primary" style={{ width: `${pourcent}%` }} />
             </div>
             {p.total === 0 && <p className="mt-2 text-sm text-muted-foreground">Le contenu du bulletin n&apos;est pas défini pour ce niveau. L&apos;administrateur doit le renseigner (menu « Contenu du bulletin »).</p>}
-            {peutEvaluer && p.total > 0 && !b.publie && <p className="mt-2 text-sm text-muted-foreground">Choisissez A, EA, AR ou NA pour chaque ligne : l&apos;enregistrement est automatique.</p>}
+            {peutEvaluer && p.total > 0 && !b.publie && <p className="mt-2 text-sm text-muted-foreground">Cochez A, EA ou AR dans le tableau pour chaque ligne (un second clic efface) : l&apos;enregistrement est automatique.</p>}
             {peutEvaluer && b.publie && <p className="mt-2 text-sm text-muted-foreground">Bulletin publié : vos modifications sont visibles tout de suite par les parents.</p>}
           </div>
         )}
@@ -146,7 +144,7 @@ export default function PageBulletinEleve() {
         {peutPublier && b && !b.publie && !publiable && p && p.total > 0 && (
           <Alert role="status" className="mb-4">
             <AlertDescription>
-              {!p.complet ? `Publication impossible : il reste ${p.total - p.evalue} ligne(s) à évaluer par l'enseignant(e).` : "Publication possible une fois l'appréciation rédigée."}
+              {`Publication impossible : il reste ${p.total - p.evalue} ligne(s) à évaluer par l'enseignant(e).`}
             </AlertDescription>
           </Alert>
         )}
@@ -164,22 +162,12 @@ export default function PageBulletinEleve() {
           </div>
         )}
 
-        {peutRediger && b && (
-          <div className="mb-6 rounded-lg border border-border bg-card p-4">
-            <Label htmlFor="appreciation" className="text-base">Appréciation générale</Label>
-            <Textarea
-              id="appreciation" value={texte} onChange={(e) => { setInfo(null); setTexte(e.target.value); }}
-              maxLength={MAX} rows={5} className="mt-2 text-base" aria-describedby="appr-aide"
-            />
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-              <p id="appr-aide" className="text-sm text-muted-foreground">{texte.length} / {MAX} caractères</p>
-              <Button size="lg" onClick={enregistrer} disabled={enCours || !modifie}>{enCours ? 'Enregistrement...' : 'Enregistrer'}</Button>
-            </div>
-          </div>
-        )}
       </div>
 
-      {b ? <BulletinVue b={b} onChoisir={peutEvaluer ? choisir : undefined} /> : !erreur && <p className="text-muted-foreground">Chargement...</p>}
+      {b ? <BulletinVue
+          b={b} onChoisir={peutEvaluer ? choisir : undefined}
+          edition={peutRediger ? { texte, max: MAX, modifie, enCours, onChange: (t) => { setInfo(null); setTexte(t); }, onEnregistrer: enregistrer } : undefined}
+        /> : !erreur && <p className="text-muted-foreground">Chargement...</p>}
     </div>
   );
 }

@@ -158,11 +158,11 @@ export class BulletinsService {
       if (rubriques.length) disciplines.push({ id: d.id, titre: d.libelle, rubriques });
     }
 
-    const resume = { A: 0, EA: 0, AR: 0, NA: 0, nonEvalue: 0 };
+    const resume = { A: 0, EA: 0, AR: 0, nonEvalue: 0 };
     let exigees = 0, evaluees = 0;
     for (const l of lignes) {
       const n = parId.get(l.id);
-      if (n) resume[n]++; else resume.nonEvalue++;
+      if (n === 'A' || n === 'EA' || n === 'AR') resume[n]++; else resume.nonEvalue++;
       if (l.archiveLe === null) { exigees++; if (n) evaluees++; }
     }
     const progression = { evalue: evaluees, total: exigees, complet: exigees > 0 && evaluees === exigees };
@@ -183,7 +183,18 @@ export class BulletinsService {
       appreciation: b?.appreciationGenerale ?? null,
       publie: b?.publie ?? false,
       datePublication: b?.datePublication ? b.datePublication.toISOString() : null,
+      ...(await this.signataires(insc.salleId)),
     };
+  }
+
+  // Noms imprimés au bas des bulletins : l'enseignante de la salle et la directrice en poste (ex. « K. RANAVELA »)
+  private async signataires(salleId: number) {
+    const [prof, dir] = await Promise.all([
+      this.prisma.personnel.findFirst({ where: { salleAffecteeId: salleId }, orderBy: { id: 'asc' }, select: { nom: true, prenom: true } }),
+      this.prisma.utilisateur.findFirst({ where: { role: RoleUtilisateur.DIRECTRICE, actif: true }, orderBy: { id: 'asc' }, select: { personnel: { select: { nom: true, prenom: true } } } }),
+    ]);
+    const signature = (x: { nom: string; prenom: string } | null | undefined) => (x ? `${x.prenom.trim().charAt(0).toUpperCase()}. ${x.nom.toUpperCase()}` : null);
+    return { enseignant: signature(prof), directrice: signature(dir?.personnel) };
   }
 
   // ---------- Examens blancs (7e) : un document par examen ----------
@@ -236,11 +247,7 @@ export class BulletinsService {
     const moyenneSimple = complet ? arrondi(totalNotes / lignes.length) : null;
     const moyennePond = complet && totalCoef > 0 ? arrondi(totalPondere / totalCoef) : null;
 
-    const [prof, dir] = await Promise.all([
-      this.prisma.personnel.findFirst({ where: { salleAffecteeId: insc.salleId }, orderBy: { id: 'asc' }, select: { nom: true, prenom: true } }),
-      this.prisma.utilisateur.findFirst({ where: { role: RoleUtilisateur.DIRECTRICE, actif: true }, orderBy: { id: 'asc' }, select: { personnel: { select: { nom: true, prenom: true } } } }),
-    ]);
-    const signature = (x: { nom: string; prenom: string } | null | undefined) => (x ? `${x.prenom.trim().charAt(0).toUpperCase()}. ${x.nom.toUpperCase()}` : null);
+    const { enseignant, directrice } = await this.signataires(insc.salleId);
 
     return {
       inscriptionId: insc.id,
@@ -250,7 +257,7 @@ export class BulletinsService {
       totaux: { coefficients: totalCoef, notes: complet ? totalNotes : null, pondere: complet ? totalPondere : null },
       moyenneSimple, moyennePonderee: moyennePond,
       resultat: moyennePond === null ? null : moyennePond >= SEUIL_RESULTAT_EXAMEN ? ('OUI' as const) : ('NON' as const),
-      enseignant: signature(prof), directrice: signature(dir?.personnel),
+      enseignant, directrice,
     };
   }
 
@@ -404,17 +411,16 @@ export class BulletinsService {
   async publier(acteur: Acteur, inscriptionId: number, dto: PublicationDto) {
     const insc = await this.inscriptionStaff(acteur, inscriptionId);
     const semestre = await this.verifierSemestre(insc.niveauId, dto.semestre);
-    const b = await this.prisma.bulletin.findUnique({
-      where: { inscriptionId_periode: { inscriptionId, periode: periode(dto.semestre) } },
-      select: { id: true, appreciationGenerale: true, publie: true },
-    });
+    const cle = { inscriptionId_periode: { inscriptionId, periode: periode(dto.semestre) } };
+    let b = await this.prisma.bulletin.findUnique({ where: cle, select: { id: true, appreciationGenerale: true, publie: true } });
 
     if (dto.publie) {
       if (b?.publie) return { publie: true, parentsPrevenus: 0 };
-      // Règle de l'école : un bulletin n'est publié que complet (toutes les lignes évaluées) ET avec son appréciation
+      // Règle de l'école : un bulletin n'est publié que complet (toutes les lignes évaluées). L'appréciation est facultative.
       const av = (await this.avancements([inscriptionId], semestre.id, insc.anneeScolaire.dateFin)).de(inscriptionId);
       if (!av.complet) throw new BadRequestException(this.raisonIncomplet(av.evalue, av.total));
-      if (!b?.appreciationGenerale) throw new BadRequestException("Rédigez l'appréciation générale avant de publier.");
+      // Le bulletin peut ne pas exister encore (aucune appréciation saisie) : on le crée, sans doublon possible (clé unique)
+      if (!b) b = await this.prisma.bulletin.upsert({ where: cle, create: { inscriptionId, periode: periode(dto.semestre) }, update: {}, select: { id: true, appreciationGenerale: true, publie: true } });
     } else if (!b || !b.publie) {
       return { publie: false, parentsPrevenus: 0 };
     }
@@ -443,16 +449,18 @@ export class BulletinsService {
   async publierClasse(acteur: Acteur, dto: PublicationClasseDto) {
     const c = await this.classe(acteur, dto.salleId, dto.niveauId, dto.semestre); // année en cours
     const ids = c.eleves.map((e) => e.inscriptionId);
-    const apprecies = await this.prisma.bulletin.findMany({
-      where: { inscriptionId: { in: ids }, periode: periode(dto.semestre), publie: false, appreciationGenerale: { not: null } },
+    // Seuls les bulletins complets sont publiés ; l'appréciation est facultative
+    const complets = c.eleves.filter((e) => e.complet && !e.publie).map((e) => e.inscriptionId);
+    if (complets.length > 0) {
+      // Garantit une ligne Bulletin pour chacun (la clé unique évite tout doublon)
+      await this.prisma.bulletin.createMany({ data: complets.map((id) => ({ inscriptionId: id, periode: periode(dto.semestre) })), skipDuplicates: true });
+    }
+    const aPublier = complets.length === 0 ? [] : await this.prisma.bulletin.findMany({
+      where: { inscriptionId: { in: complets }, periode: periode(dto.semestre), publie: false },
       select: { id: true, inscriptionId: true },
     });
-    const complets = new Set(c.eleves.filter((e) => e.complet).map((e) => e.inscriptionId));
-    const aPublier = apprecies.filter((x) => complets.has(x.inscriptionId));
-
-    const nonPublies = c.eleves.filter((e) => !e.publie);
-    const incomplets = nonPublies.filter((e) => !e.complet).length;
-    const sansAppreciation = nonPublies.filter((e) => e.complet && !e.aAppreciation).length;
+    const incomplets = c.eleves.filter((e) => !e.publie && !e.complet).length;
+    const sansAppreciation = 0; // conservé dans la réponse pour compatibilité ; l'appréciation n'est plus exigée
 
     let prevenus = 0;
     if (aPublier.length > 0) {
@@ -489,7 +497,7 @@ export class BulletinsService {
   }
 
   // Progression : ce qui a été VU en classe, en lecture seule. Aucune évaluation de l'élève n'est montrée ici :
-  // ses niveaux (A, EA, AR, NA) n'apparaissent qu'au bulletin publié.
+  // ses niveaux (A, EA, AR) n'apparaissent qu'au bulletin publié.
   async progressionParent(utilisateurId: number, inscriptionId: number, numero: number) {
     if (numero !== 1 && numero !== 2) throw new BadRequestException('Semestre invalide.');
     const insc = await this.inscriptionParent(utilisateurId, inscriptionId); // 404 si ce n'est pas son enfant

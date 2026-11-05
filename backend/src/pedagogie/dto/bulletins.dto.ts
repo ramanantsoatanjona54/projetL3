@@ -26,8 +26,8 @@ export class NoteLigneDto {
 
   // null explicite = retirer l'évaluation de cette ligne ; une valeur absente est refusée
   @ValidateIf((o) => o.niveau !== null)
-  @IsIn(['A', 'EA', 'AR', 'NA'])
-  niveau: 'A' | 'EA' | 'AR' | 'NA' | null;
+  @IsIn(['A', 'EA', 'AR'])
+  niveau: 'A' | 'EA' | 'AR' | null;
 }
 
 export class SaisirBulletinDto {
